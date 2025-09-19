@@ -41,6 +41,12 @@ class GenerateCodeAction(Action):
                 raise NotImplementedError
 
         class RequestBriefingAction(Action):
-            name = "RequestBriefingAction"
+            def __init__(self):
+                try:
+                    super().__init__()  # 兼容 metagpt.Action
+                except TypeError:
+                # 兼容我们自带的占位 Action(name: str="")
+                    super().__init__(name="RequestBriefingAction")
+
             async def run(self, target_file: str, brief_manager):
                 return brief_manager.get_brief(target_file)

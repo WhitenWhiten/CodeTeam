@@ -11,6 +11,12 @@ except ImportError:
             raise NotImplementedError
 
 class RunTestsAction(Action):
-    name = "RunTestsAction"
+    def __init__(self):
+        try:
+            super().__init__()  # 兼容 metagpt.Action
+        except TypeError:
+        # 兼容我们自带的占位 Action(name: str="")
+            super().__init__(name="RunTestsAction")
+
     async def run(self, repo_root, run_command, runtime_adapter):
         return runtime_adapter.run_tests(repo_root, run_command)

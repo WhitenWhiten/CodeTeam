@@ -17,9 +17,12 @@ SDS:
 """
 
 class GenerateTestsAction(Action):
-    name = "GenerateTestsAction"
     def __init__(self, llm=None):
-        super().__init__(self.name)
+        try:
+            super().__init__()  # 兼容 metagpt.Action
+        except TypeError:
+        # 兼容我们自带的占位 Action(name: str="")
+            super().__init__(name="GenerateTestsAction")
         self.llm = llm
 
     def _build_prompt(self, sds: dict) -> str:
