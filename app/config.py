@@ -10,7 +10,7 @@ class RAGConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: str = "openai"   # mock|openai
-    model: str = "gpt-4o"
+    model: str = "gpt-3.5-turbo"
     temperature: float = 0.2
     max_tokens: int = 4000
     base_url: Optional[str] = None
