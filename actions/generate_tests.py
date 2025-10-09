@@ -11,7 +11,7 @@ except ImportError:
             raise NotImplementedError
 
 QA_PROMPT_FALLBACK = """你是QA。根据SDS为pytest生成测试套件与运行策略(run_command)。
-输出严格JSON：{"tests": {"tests/test_xxx.py": "<content>"...}, "run_command": "pytest -q"}
+输出严格JSON：{{"tests": {{"tests/test_xxx.py": "<content>"...}}, "run_command": "pytest -q"}}
 SDS:
 {sds_json}
 """

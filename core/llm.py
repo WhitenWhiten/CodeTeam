@@ -7,6 +7,7 @@ class LLMClient:
     def __init__(self, cfg):
         self.cfg = cfg
         self._mode = getattr(cfg, "model", "mock")
+        print(self._mode)
 
     async def text(self, prompt: str) -> str:
         if self._mode == "mock":
@@ -19,6 +20,7 @@ class LLMClient:
         # TODO: 调用真实 LLM
         return ""
 
+    # working on this method
     async def structured_json(self, prompt: str, schema: str | Dict[str, Any] = None) -> Dict[str, Any]:
         if self._mode == "mock":
             if schema == "SDS":

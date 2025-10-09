@@ -5,23 +5,23 @@ from typing import List, Optional
 
 class RAGConfig(BaseModel):
     enabled: bool = False
-    index_dir: str = "./rag_index"
+    index_dir: str = "./rag"
     top_k: int = 6
 
 class LLMConfig(BaseModel):
     provider: str = "openai"   # mock|openai
     model: str = "gpt-3.5-turbo"
     temperature: float = 0.2
-    max_tokens: int = 4000
-    base_url: Optional[str] = None
+    max_tokens: int = 10000
+    base_url: Optional[str] = "https://api.openai-proxy.org/v1"
 
 class SystemConfig(BaseModel):
-    architects: int = 2
+    architects: int = 3
     sds_retry: int = 1
     max_rounds: int = 2
     workspace: str = "./workspace"
     allow_languages: List[str] = ["python"]
-    user_question: str = "请生成一个简单的可测试问候程序"
+    user_question: str = "请生成一个简单python hello world程序"
     async_mode: bool = True
     llm: LLMConfig = LLMConfig()
     rag: RAGConfig = RAGConfig()

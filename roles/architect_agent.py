@@ -22,7 +22,7 @@ class ArchitectAgent(Role):
         super().__init__(name=name)
         self.llm = llm
         self.rag = rag
-        self.set_actions([GenerateSDSAction(llm=llm)])
+        self._gen = GenerateSDSAction(llm=llm)
 
     async def propose_sds(self, question: str) -> dict:
-        return await self.run(GenerateSDSAction, question=question, rag_client=self.rag)
+        return await self._gen.run(question=question, rag_client=self.rag)

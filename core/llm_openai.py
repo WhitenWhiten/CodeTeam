@@ -22,7 +22,6 @@ class OpenAILLM:
         self.max_tokens = max_tokens
 
     async def text(self, prompt: str) -> str:
-        # 简单封装；你可以添加重试策略
         for attempt in range(3):
             try:
                 resp = await asyncio.to_thread(self.client.chat.completions.create,

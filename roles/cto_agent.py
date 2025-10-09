@@ -22,7 +22,7 @@ class CTOAgent(Role):
         super().__init__(name="CTO")
         self.llm = llm
         self.rag = rag
-        self.set_actions([SelectSDSAction(llm=llm)])
-
+        self._sel = SelectSDSAction(llm=llm)
+        
     async def choose(self, question, sds_list):
-        return await self.run(SelectSDSAction, question=question, sds_list=sds_list, rag_client=self.rag)
+        return await self._sel.run(question=question, sds_list=sds_list, rag_client=self.rag)

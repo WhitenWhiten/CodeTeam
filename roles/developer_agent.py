@@ -1,75 +1,80 @@
 # roles/developer_agent.py
 from __future__ import annotations
 import threading
+import asyncio
 from typing import Dict, List
-try:
-    from metagpt.roles import Role
-except ImportError:
-    class Role:
-        def __init__(self, name: str = ""):
-            self.name = name
-        def set_actions(self, actions): self._actions = actions
-        def run(self, action_cls, **kwargs):
-            # 占位，同步转异步简化：直接调用action.run（可能是协程，简化起见假设同步）
-            action = None
-            for a in self._actions:
-                if isinstance(a, action_cls) or (a.__class__ is action_cls):
-                    action = a
-                    break
-            if not action:
-                action = action_cls()
-            # 这里应是 await，但为了线程 Worker 简化假用同步调用（Mock环境OK）
-            coro = action.run(**kwargs)
-            if hasattr(coro, "__await__"):
-                import asyncio
-                return asyncio.get_event_loop().run_until_complete(coro)
-            return coro
 
 from actions.generate_code import GenerateCodeAction
 from actions.request_briefing import RequestBriefingAction
 
-class DeveloperAgent(Role, threading.Thread):
+class DeveloperAgent(threading.Thread):
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
-                 llm, repo_manager, brief_manager, event_bus):
-        Role.__init__(self, name=agent_id)
-        threading.Thread.__init__(self, name=agent_id, daemon=True)
+                llm, repo_manager, brief_manager, event_bus):
+        super().__init__(name=agent_id, daemon=True) # 关键：正确调用 Thread.init
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
-        self.sds_map = sds_map  # path -> file_spec dict
+        self.sds_map = sds_map # path -> file_spec dict
         self.llm = llm
         self.repo = repo_manager
         self.briefs = brief_manager
         self.event_bus = event_bus
-        self.set_actions([GenerateCodeAction(llm=llm), RequestBriefingAction()])
+        self._gen = GenerateCodeAction(llm=llm)
+        self._req = RequestBriefingAction()
+        self._stop_evt = threading.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop and not self._loop.is_closed():
+            return self._loop
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        return self._loop
+
+    def _await(self, maybe_coro):
+        if hasattr(maybe_coro, "__await__"):
+            loop = self._ensure_loop()
+            return loop.run_until_complete(maybe_coro)
+        return maybe_coro
+
+    def stop(self):
+        self._stop_evt.set()
 
     def _collect_briefs(self, file_spec: dict) -> dict:
         briefs = {}
         for dep in file_spec.get("dependencies", []):
             if dep not in self.assigned_files:
-                brief = self.run(RequestBriefingAction, target_file=dep, brief_manager=self.briefs)
-                if brief:
-                    briefs[dep] = brief
+                res = self._req.run(target_file=dep, brief_manager=self.briefs)
+                res = self._await(res)
+                if res:
+                    briefs[dep] = res
         return briefs
 
     def _implement(self, file_path: str):
         file_spec = self.sds_map[file_path]
         briefs = self._collect_briefs(file_spec)
-        brief = self.run(GenerateCodeAction, file_spec=file_spec, briefs=briefs,
-                         llm=self.llm, repo_manager=self.repo, agent_id=self.agent_id, issues=None)
+        brief = self._await(self._gen.run(
+            file_spec=file_spec, briefs=briefs, llm=self.llm,
+            repo_manager=self.repo, agent_id=self.agent_id, issues=None
+        ))
         self.briefs.update_brief(file_path, brief)
         self.event_bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path})
 
     def _fix(self, file_path: str, issues: dict):
         file_spec = self.sds_map[file_path]
         briefs = self._collect_briefs(file_spec)
-        brief = self.run(GenerateCodeAction, file_spec=file_spec, briefs=briefs,
-                         llm=self.llm, repo_manager=self.repo, agent_id=self.agent_id, issues=issues)
+        brief = self._await(self._gen.run(
+            file_spec=file_spec, briefs=briefs, llm=self.llm,
+            repo_manager=self.repo, agent_id=self.agent_id, issues=issues
+        ))
         self.briefs.update_brief(file_path, brief)
         self.event_bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path})
 
     def run(self):
-        while True:
-            task = self.event_bus.take(f"dev_task:{self.agent_id}")
+        topic = f"dev_task:{self.agent_id}"
+        while not self._stop_evt.is_set():
+            task = self.event_bus.take(topic)
+            if not task:
+                continue
             t = task.get("type")
             if t == "implement":
                 self._implement(task["file_path"])

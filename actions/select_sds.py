@@ -15,7 +15,7 @@ except ImportError:
 
 CTO_PROMPT_FALLBACK = """你是CTO。对给定的多份SDS进行评分，维度：可行性、复杂度、成本、可测试性、一致性。
 若所选技术栈非python，请改选最优的python方案。
-输出严格JSON：{"chosen_index": number, "rationale": string}
+输出严格JSON：{{"chosen_index": number, "rationale": string}}
 
 输入：
 Q:

@@ -1,6 +1,7 @@
-# actions/generate_code.py (更新)
+# actions/generate_code.py
 from __future__ import annotations
 from typing import Dict, Any, Optional
+
 try:
     from metagpt.actions import Action
 except ImportError:
@@ -12,6 +13,7 @@ except ImportError:
             raise NotImplementedError
 
 from core.ast_utils import to_brief
+from core.text_utils import strip_code_fences
 
 DEV_PROMPT_FALLBACK = """# FILE_PATH: {file_path}
 你是资深开发工程师，负责实现或修复单个文件。
@@ -38,9 +40,10 @@ interfaces：
 class GenerateCodeAction(Action):
     def __init__(self, llm=None):
         try:
-            super().__init__()  # 兼容 metagpt.Action
+            # 兼容 metagpt.Action 的无参构造
+            super().__init__()
         except TypeError:
-        # 兼容我们自带的占位 Action(name: str="")
+            # 兼容我们自带的占位 Action(name: str="")
             super().__init__(name="GenerateCodeAction")
         self.llm = llm
 
@@ -85,22 +88,36 @@ class GenerateCodeAction(Action):
 
     async def run(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], llm, repo_manager, agent_id: str, issues: Optional[Dict[str, Any]] = None):
         prompt = self._build_prompt(file_spec, briefs, issues)
-        code = await llm.text(prompt)
+        raw_code = await llm.text(prompt)
+
+        # 去除 Markdown/HTML 代码块围栏，确保写入与 AST 解析的源码干净
+        code = strip_code_fences(raw_code)
+
         # change_type: 若文件已存在则为 modify，否则 create
         change_type = "modify" if repo_manager.exists(file_spec["path"]) else "create"
+
+        # 写入代码（按 agent 权限）
         repo_manager.write_file(file_spec["path"], code, agent_id=agent_id)
-        brief = to_brief(code)
+
+        # 生成简报，容错处理语法错误（例如未完全移除围栏或生成代码不合法）
+        try:
+            brief = to_brief(code)
+        except SyntaxError:
+            brief = {"functions": [], "classes": [], "error": "syntax error in generated code"}
+
         ur = {
             "file_path": file_spec["path"],
             "change_type": change_type,
-            "functions_added": [] if change_type == "modify" else brief["functions"],
-            "functions_modified": brief["functions"] if change_type == "modify" else [],
+            "functions_added": [] if change_type == "modify" else brief.get("functions", []),
+            "functions_modified": brief.get("functions", []) if change_type == "modify" else [],
             "functions_removed": [],
-            "classes_added": [] if change_type == "modify" else brief["classes"],
-            "classes_modified": brief["classes"] if change_type == "modify" else [],
+            "classes_added": [] if change_type == "modify" else brief.get("classes", []),
+            "classes_modified": brief.get("classes", []) if change_type == "modify" else [],
             "classes_removed": [],
             "rationale": "fix implementation per QA feedback" if issues else "initial implementation based on file_spec",
             "related_files_brief_used": list(briefs.keys())
         }
+
+        # 依赖现有 RepoManager 的 commit_file 实现
         repo_manager.commit_file(file_spec["path"], ur, agent_id)
         return brief

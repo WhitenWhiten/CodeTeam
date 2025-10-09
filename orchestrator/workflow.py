@@ -14,6 +14,7 @@ from utils.sds_parser import parse_sds
 from utils.allowed_files import flatten_repo_structure
 from utils.event_bus import EventBus
 from runtime_adapters.python_runtime import PythonRuntime
+import os
 
 class MultiAgentCodegenWorkflow:
     def __init__(self, ctx):
@@ -46,59 +47,98 @@ class MultiAgentCodegenWorkflow:
         decision = await cto.choose(question, sds_list)
         chosen_sds = decision["chosen_sds"]
         sds = parse_sds(chosen_sds)  # models.SDS
+
         # 3) Repo init with permissions
         allowed_all: Set[str] = set(flatten_repo_structure(chosen_sds["repo_structure"]))
+
+        # 预推断 QA 将要写入的测试文件名（如 tests/test_<stem>.py），加入权限集合
+        def infer_test_file(path: str) -> str | None:
+            p = path.replace("\\", "/")
+            if p.startswith("tests/") or not p.endswith(".py"):
+                return None
+            stem = os.path.splitext(os.path.basename(p))[0]
+            return f"tests/test_{stem}.py"
+
+        test_placeholders = {tp for p in allowed_all if (tp := infer_test_file(p))}
+        # 将占位测试文件加入全局允许集合
+        allowed_all |= test_placeholders
+
         # map: agent->files；QA写 tests 下文件
         allowed_by_agent: Dict[str, Set[str]] = {}
         for a in sds.dev_plan:
             allowed_by_agent[a.developer_id] = set(a.file_paths)
-        # QA 权限：repo_structure 中 tests 下的文件
+
+        # QA 权限：加入所有已声明的 tests/ 下文件，以及占位测试文件
         tests_files = {p for p in allowed_all if p.startswith("tests/")}
-        allowed_by_agent["QA"] = tests_files
+        allowed_by_agent["QA"] = tests_files | test_placeholders
+
         repo_root = self.ctx.make_repo_root()
-        repo = RepoManager(repo_root, allowed_files_all=allowed_all, allowed_files_by_agent=allowed_by_agent)
+        repo = RepoManager(
+            repo_root,
+            allowed_files_all=allowed_all,
+            allowed_files_by_agent=allowed_by_agent
+        )
         repo.init_structure(sds.repo_structure)
+
         # 4) Managers
         brief_mgr = BriefManager()
         event_bus = EventBus()
+
         # 5) QA init
         qa = QAAgent(self.ctx.llm, repo, PythonRuntime(), event_bus, sds=sds)
         await qa.init_tests(chosen_sds)
-        # 6) Dev threads
-        sds_map: Dict[str, dict] = {fs.path: {
-            "path": fs.path,
-            "responsibilities": fs.responsibilities,
-            "interfaces": {
-                "functions": [f.__dict__ for f in fs.interfaces["functions"]],
-                "classes": [c.__dict__ for c in fs.interfaces["classes"]],
-            },
-            "dependencies": fs.dependencies
-        } for fs in sds.file_specs}
-        dev_threads: List[DeveloperAgent] = []
+
+        # 6) Dev threads（保持对 sds_map 的递归字典化修复）
+        sds_map: Dict[str, dict] = {}
+        for fs in sds.file_specs:
+            func_dicts = [getattr(f, "__dict__", f) for f in fs.interfaces["functions"]]
+            class_dicts = []
+            for c in fs.interfaces["classes"]:
+                c_dict = getattr(c, "__dict__", c)
+                methods = c_dict.get("methods", []) if isinstance(c_dict, dict) else getattr(c, "methods", [])
+                methods_dicts = [getattr(m, "__dict__", m) for m in methods]
+                c_copy = dict(c_dict) if isinstance(c_dict, dict) else dict(c.__dict__)
+                c_copy["methods"] = methods_dicts
+                class_dicts.append(c_copy)
+
+            sds_map[fs.path] = {
+                "path": fs.path,
+                "responsibilities": fs.responsibilities,
+                "interfaces": {
+                    "functions": func_dicts,
+                    "classes": class_dicts,
+                },
+                "dependencies": fs.dependencies
+            }
+
+        dev_threads = []
         for a in sds.dev_plan:
             dev = DeveloperAgent(a.developer_id, a.file_paths, sds_map, self.ctx.llm, repo, brief_mgr, event_bus)
             dev.start()
             dev_threads.append(dev)
+
         # 7) 首轮实现任务分发
         for fs in sds.file_specs:
             dev_id = next(d.developer_id for d in sds.dev_plan if fs.path in d.file_paths)
             event_bus.emit(f"dev_task:{dev_id}", {"type": "implement", "file_path": fs.path})
-        # 等待首轮完成
         self._await_dev_round_done(event_bus, expected=len(sds.file_specs))
+
         # 8) 测试与修复循环
         for round_no in range(self.ctx.cfg.max_rounds):
+            print(f"Fix Round: {round_no + 1}")
             result = await qa.run_and_feedback()
             if result.get("success", False):
                 break
             fixes = result.get("fix_suggestions", [])
             if not fixes:
-                # 没有定位到具体文件，保守结束以避免死循环
                 break
-            # 分发修复任务
             for fx in fixes:
-                event_bus.emit(f"dev_task:{fx['dev_id']}", {"type": "fix", "file_path": fx["file_path"], "issues": fx.get("issues", {})})
-            # 等待修复数量完成
+                event_bus.emit(
+                    f"dev_task:{fx['dev_id']}",
+                    {"type": "fix", "file_path": fx["file_path"], "issues": fx.get("issues", {})}
+                )
             self._await_dev_round_done(event_bus, expected=len(fixes))
+
         # 9) 停止开发者线程
         for dev in dev_threads:
             event_bus.emit(f"dev_task:{dev.agent_id}", {"type": "exit"})
