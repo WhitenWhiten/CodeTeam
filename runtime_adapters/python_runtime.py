@@ -1,15 +1,23 @@
 # runtime_adapters/python_runtime.py
 from __future__ import annotations
+import importlib.util
 import subprocess
-import sys
-import json
+import shutil
 from pathlib import Path
 from typing import Dict, Any, List
 
+from runtime_adapters.pytest_fallback import run_pytest_style_tests
+
+
 class PythonRuntime:
+    def _can_run_pytest(self) -> bool:
+        return shutil.which("pytest") is not None or importlib.util.find_spec("pytest") is not None
+
     def run_tests(self, repo_root: str, run_command: str) -> Dict[str, Any]:
         # 进入仓库目录执行pytest
         cwd = Path(repo_root)
+        if "pytest" in run_command and not self._can_run_pytest():
+            return run_pytest_style_tests(str(cwd))
         try:
             proc = subprocess.run(
                 run_command, shell=True, cwd=cwd,

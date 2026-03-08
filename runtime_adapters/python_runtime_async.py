@@ -1,11 +1,21 @@
 # runtime_adapters/python_runtime_async.py
 from __future__ import annotations
 import asyncio
+import importlib.util
+import shutil
 from typing import Dict, Any, List
 from pathlib import Path
 
+from runtime_adapters.pytest_fallback import run_pytest_style_tests
+
+
 class PythonRuntimeAsync:
+    def _can_run_pytest(self) -> bool:
+        return shutil.which("pytest") is not None or importlib.util.find_spec("pytest") is not None
+
     async def run_tests(self, repo_root: str, run_command: str) -> Dict[str, Any]:
+        if "pytest" in run_command and not self._can_run_pytest():
+            return await asyncio.to_thread(run_pytest_style_tests, repo_root)
         try:
             proc = await asyncio.create_subprocess_shell(
                 run_command,
