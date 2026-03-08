@@ -276,7 +276,8 @@ class RepoManager:
             if name_attr:
                 abs_path = os.path.join(parent_abs, str(name_attr))
             elif isinstance(path_attr, str) and path_attr:
-                abs_path = os.path.join(self.root, path_attr.replace("\\", "/"))
+                # RepoNode.path in nested trees is relative to the current parent node.
+                abs_path = os.path.join(parent_abs, path_attr.replace("\\", "/"))
             else:
                 raise ValueError("RepoNode must have either 'name' or 'path'")
 

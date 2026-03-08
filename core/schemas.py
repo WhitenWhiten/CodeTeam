@@ -1,9 +1,10 @@
 # core/schemas.py
 from __future__ import annotations
-import re
-import json
 from typing import Dict, Any, Set
-import jsonschema
+try:
+    import jsonschema
+except ImportError:
+    jsonschema = None
 
 # 基础结构 Schema
 SDS_SCHEMA: Dict[str, Any] = {
@@ -139,8 +140,41 @@ UPDATE_REASON_SCHEMA: Dict[str, Any] = {
   "additionalProperties": False
 }
 
+QA_TEST_BUNDLE_SCHEMA: Dict[str, Any] = {
+  "type": "object",
+  "required": ["tests", "run_command"],
+  "properties": {
+    "tests": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string"}
+    },
+    "run_command": {"type": "string", "minLength": 1},
+    "setup_commands": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    }
+  },
+  "additionalProperties": False
+}
+
+def _jsonschema_validate(payload: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    if jsonschema is not None:
+        jsonschema.validate(payload, schema)
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
 def validate_sds_structure(sds_json: Dict[str, Any]) -> None:
-    jsonschema.validate(sds_json, SDS_SCHEMA)
+    _jsonschema_validate(sds_json, SDS_SCHEMA)
+    _require(isinstance(sds_json, dict), "SDS must be an object")
+    for key in ("id", "problem", "tech_stack", "repo_structure", "file_specs", "dev_plan"):
+        _require(key in sds_json, f"missing SDS field: {key}")
+    _require(isinstance(sds_json["repo_structure"], list) and sds_json["repo_structure"], "repo_structure must be a non-empty list")
+    _require(isinstance(sds_json["file_specs"], list) and sds_json["file_specs"], "file_specs must be a non-empty list")
+    _require(isinstance(sds_json["dev_plan"], list) and sds_json["dev_plan"], "dev_plan must be a non-empty list")
 
 def _flatten_repo_files(nodes) -> Set[str]:
     files = set()
@@ -182,4 +216,18 @@ def validate_sds(sds_json: Dict[str, Any]) -> None:
     validate_sds_semantics(sds_json)
 
 def validate_update_reason(ur_json: Dict[str, Any]) -> None:
-    jsonschema.validate(ur_json, UPDATE_REASON_SCHEMA)
+    _jsonschema_validate(ur_json, UPDATE_REASON_SCHEMA)
+    _require(isinstance(ur_json, dict), "update reason must be an object")
+    for key in ("file_path", "change_type", "rationale", "related_files_brief_used"):
+        _require(key in ur_json, f"missing update reason field: {key}")
+
+def validate_qa_test_bundle(bundle_json: Dict[str, Any]) -> None:
+    _jsonschema_validate(bundle_json, QA_TEST_BUNDLE_SCHEMA)
+    _require(isinstance(bundle_json, dict), "QA bundle must be an object")
+    tests = bundle_json.get("tests")
+    _require(isinstance(tests, dict) and tests, "QA bundle tests must be a non-empty object")
+    for path, content in tests.items():
+        _require(isinstance(path, str) and path.startswith("tests/"), f"invalid test path: {path!r}")
+        _require(isinstance(content, str), f"test content must be a string: {path!r}")
+    run_command = bundle_json.get("run_command")
+    _require(isinstance(run_command, str) and run_command.strip(), "run_command must be a non-empty string")

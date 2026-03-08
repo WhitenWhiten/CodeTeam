@@ -25,6 +25,7 @@ except ImportError:
 from actions.generate_tests import GenerateTestsAction
 from actions.run_tests import RunTestsAction
 from core.text_utils import strip_code_fences
+from utils.failure_routing import build_fix_suggestions
 
 class QAAgent(Role):
     def __init__(self, llm, repo_manager, runtime_adapter, event_bus, sds=None):
@@ -53,32 +54,7 @@ class QAAgent(Role):
         self.run_command = res.get("run_command")
 
     def _map_failures(self, failures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        suggestions = []
-        # 已知的源文件集合
-        src_files: Set[str] = set(self.file_owner.keys())
-        for fail in failures:
-            fp = fail.get("file_path", "")
-            stack = fail.get("stack", "")
-            # 简单从堆栈中找匹配到的源文件路径
-            target = None
-            for line in stack.splitlines():
-                for sf in src_files:
-                    if sf in line:
-                        target = sf
-                        break
-                if target:
-                    break
-            if not target:
-                # 若直接报告的文件就在源文件中
-                if fp in src_files:
-                    target = fp
-            if not target:
-                # fallback: 把同一轮全部分发（保守，但确保推进）
-                for sf in src_files:
-                    suggestions.append({"dev_id": self.file_owner[sf], "file_path": sf, "issues": fail})
-            else:
-                suggestions.append({"dev_id": self.file_owner[target], "file_path": target, "issues": fail})
-        return suggestions
+        return build_fix_suggestions(failures, self.file_owner)
 
     async def run_and_feedback(self):
         result = await self._run.run(repo_root=str(self.repo.root), run_command=self.run_command, runtime_adapter=self.adapter)

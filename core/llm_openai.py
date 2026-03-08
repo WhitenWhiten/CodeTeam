@@ -1,9 +1,20 @@
 # core/llm_openai.py
 from __future__ import annotations
-import os, json, asyncio, time, re
+import os, json, asyncio
 from typing import Any, Dict, Optional
-import jsonschema
-from core.schemas import SDS_SCHEMA, UPDATE_REASON_SCHEMA  # 如需也可传入自定义schema
+try:
+    import jsonschema
+except ImportError:
+    jsonschema = None
+
+from core.schemas import (
+    QA_TEST_BUNDLE_SCHEMA,
+    SDS_SCHEMA,
+    UPDATE_REASON_SCHEMA,
+    validate_qa_test_bundle,
+    validate_sds,
+    validate_update_reason,
+)
 
 try:
     from openai import OpenAI
@@ -39,20 +50,26 @@ class OpenAILLM:
     async def structured_json(self, prompt: str, schema: str | Dict[str, Any] | None = None, max_retries: int = 3) -> Dict[str, Any]:
         # 使用 response_format 强制 JSON，再做 schema 校验与纠错
         schema_dict = None
+        named_validator = None
         if isinstance(schema, dict):
             schema_dict = schema
         elif isinstance(schema, str):
             if schema.upper() == "SDS":
                 schema_dict = SDS_SCHEMA
+                named_validator = validate_sds
             elif schema.upper() == "CTO_DECISION":
                 schema_dict = {"type":"object","required":["chosen_index"],"properties":{"chosen_index":{"type":"number"},"rationale":{"type":"string"}}}
             elif schema.upper() == "UPDATE_REASON":
                 schema_dict = UPDATE_REASON_SCHEMA
+                named_validator = validate_update_reason
+            elif schema.upper() == "QA_TEST_BUNDLE":
+                schema_dict = QA_TEST_BUNDLE_SCHEMA
+                named_validator = validate_qa_test_bundle
 
         content = await self._gen_json_once(prompt)
         parsed = self._safe_parse_json(content)
         if schema_dict:
-            ok, errs = self._validate(parsed, schema_dict)
+            ok, errs = self._validate(parsed, schema_dict, validator=named_validator)
             if ok:
                 return parsed
         else:
@@ -66,7 +83,7 @@ class OpenAILLM:
             content = await self._gen_json_once(repair_prompt)
             parsed = self._safe_parse_json(content)
             if schema_dict:
-                ok, errs = self._validate(parsed, schema_dict)
+                ok, errs = self._validate(parsed, schema_dict, validator=named_validator)
                 if ok:
                     return parsed
                 last_msg = content + f"\n\nSchemaErrors: {errs}"
@@ -117,11 +134,14 @@ class OpenAILLM:
         except Exception:
             return None
 
-    def _validate(self, obj: Any, schema: Dict[str, Any]) -> tuple[bool, str]:
+    def _validate(self, obj: Any, schema: Dict[str, Any], validator=None) -> tuple[bool, str]:
         try:
-            jsonschema.validate(obj, schema)
+            if validator is not None:
+                validator(obj)
+            elif jsonschema is not None:
+                jsonschema.validate(obj, schema)
             return True, ""
-        except jsonschema.ValidationError as e:
+        except Exception as e:
             return False, str(e)
 
     def _build_repair_prompt(self, last_json_text: str, schema: Optional[Dict[str, Any]]) -> str:

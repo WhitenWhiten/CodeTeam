@@ -1,13 +1,12 @@
 # core/llm.py
 from __future__ import annotations
-import json
 from typing import Any, Dict
 
 class LLMClient:
     def __init__(self, cfg):
         self.cfg = cfg
-        self._mode = getattr(cfg, "model", "mock")
-        print(self._mode)
+        provider = getattr(cfg, "provider", "mock")
+        self._mode = "mock" if provider == "mock" else getattr(cfg, "model", "mock")
 
     async def text(self, prompt: str) -> str:
         if self._mode == "mock":
@@ -27,6 +26,8 @@ class LLMClient:
                 return self._mock_sds()
             if schema == "CTO_DECISION":
                 return {"chosen_index": 0, "rationale": "Mock chooses the first SDS"}
+            if schema == "QA_TEST_BUNDLE":
+                return self._mock_test_bundle()
         # TODO: 调用真实 LLM 并解析JSON
         return {}
 
@@ -40,7 +41,7 @@ class LLMClient:
     def _mock_sds(self) -> Dict[str, Any]:
         return {
           "id": "sds-mock-001",
-          "problem": "生成简单可测试的问候程序",
+          "problem": "生成简化版在线商店程序",
           "tech_stack": {
             "language": "python",
             "frameworks": [],
@@ -49,79 +50,141 @@ class LLMClient:
           },
           "repo_structure": [
             {"path": "main.py", "type": "file"},
-            {"path": "app", "type": "dir", "children": [
-              {"path": "utils.py", "type": "file"}
+            {"path": "shop", "type": "dir", "children": [
+              {"path": "__init__.py", "type": "file"},
+              {"path": "catalog.py", "type": "file"},
+              {"path": "cart.py", "type": "file"}
             ]},
             {"path": "tests", "type": "dir", "children": [
               {"path": "test_main.py", "type": "file"},
-              {"path": "test_utils.py", "type": "file"}
+              {"path": "test_catalog.py", "type": "file"},
+              {"path": "test_cart.py", "type": "file"}
             ]}
           ],
           "file_specs": [
             {
               "path": "main.py",
-              "responsibilities": "应用入口；提供main(name:str='World')->str，调用app/utils.py的greet",
+              "responsibilities": "应用入口；提供checkout_total(item_names:list[str])->float，组合商品目录与购物车逻辑",
               "interfaces": {"functions": [
-                {"name": "main", "signature": "def main(name: str = 'World') -> str:", "doc": "Return greeting"}
+                {"name": "checkout_total", "signature": "def checkout_total(item_names: list[str]) -> float:", "doc": "Return the total price for selected products"}
               ], "classes": []},
-              "dependencies": ["app/utils.py"]
+              "dependencies": ["shop/catalog.py", "shop/cart.py"]
             },
             {
-              "path": "app/utils.py",
-              "responsibilities": "通用工具；提供greet(name:str)->str",
+              "path": "shop/catalog.py",
+              "responsibilities": "商品目录模块；提供基础商品清单与按名称查价能力",
               "interfaces": {"functions": [
-                {"name": "greet", "signature": "def greet(name: str) -> str:", "doc": "Return greeting text"}
+                {"name": "list_products", "signature": "def list_products() -> list[dict]:", "doc": "Return the product catalog"},
+                {"name": "get_price", "signature": "def get_price(name: str) -> float:", "doc": "Return the price of a named product"}
               ], "classes": []},
               "dependencies": []
+            },
+            {
+              "path": "shop/cart.py",
+              "responsibilities": "购物车模块；根据商品名称列表和目录价格计算总价",
+              "interfaces": {"functions": [
+                {"name": "calculate_total", "signature": "def calculate_total(item_names: list[str], price_lookup: callable) -> float:", "doc": "Calculate a cart total from a lookup function"}
+              ], "classes": []},
+              "dependencies": ["shop/catalog.py"]
             }
           ],
           "dev_plan": [
             {"developer_id": "Dev-1", "file_paths": ["main.py"]},
-            {"developer_id": "Dev-2", "file_paths": ["app/utils.py"]}
+            {"developer_id": "Dev-2", "file_paths": ["shop/catalog.py"]},
+            {"developer_id": "Dev-3", "file_paths": ["shop/cart.py"]}
           ],
           "constraints": {},
-          "notes": "tests目录由QA负责写入，但测试文件路径已在repo_structure中固定"
+          "notes": "tests目录由QA负责写入，三个开发者分别负责入口、商品目录和购物车逻辑"
         }
 
     def _mock_code(self, file_path: str) -> str:
-        if file_path == "app/utils.py":
+        if file_path == "shop/catalog.py":
             return '''"""
-Utility functions.
+Catalog data for the demo online shop.
 """
-from typing import Any
+from __future__ import annotations
 
-def greet(name: str) -> str:
-    """Return a greeting message."""
-    return f"Hello, {name}!"
+PRODUCTS = [
+    {"name": "keyboard", "price": 99.0},
+    {"name": "mouse", "price": 49.0},
+    {"name": "monitor", "price": 199.0},
+]
+
+
+def list_products() -> list[dict]:
+    """Return the available product catalog."""
+    return [dict(item) for item in PRODUCTS]
+
+
+def get_price(name: str) -> float:
+    """Return the price of a known product."""
+    for product in PRODUCTS:
+        if product["name"] == name:
+            return float(product["price"])
+    raise KeyError(f"unknown product: {name}")
+'''
+        if file_path == "shop/cart.py":
+            return '''"""
+Cart helpers for the demo online shop.
+"""
+from __future__ import annotations
+
+
+def calculate_total(item_names: list[str], price_lookup: callable) -> float:
+    """Calculate the total price of all requested items."""
+    total = 0.0
+    for item_name in item_names:
+        total += float(price_lookup(item_name))
+    return total
 '''
         if file_path == "main.py":
             return '''"""
-Application entry point.
+Application entry point for the demo online shop.
 """
-from typing import Any
-from app.utils import greet
+from __future__ import annotations
 
-def main(name: str = "World") -> str:
-    """Return greeting by delegating to utils.greet."""
-    message = greet(name)
-    return message
+from shop.cart import calculate_total
+from shop.catalog import get_price
+
+
+def checkout_total(item_names: list[str]) -> float:
+    """Return the cart total for the provided product names."""
+    return calculate_total(item_names, get_price)
 
 if __name__ == "__main__":
-    print(main())
+    sample = ["keyboard", "mouse"]
+    print(checkout_total(sample))
 '''
         # default empty
         return "# unknown file"
 
     def _mock_tests(self) -> Dict[str, str]:
-        return {
-          "tests/test_utils.py": '''from app.utils import greet
+        return dict(self._mock_test_bundle()["tests"])
 
-def test_greet_basic():
-    assert greet("Alice") == "Hello, Alice!"
+    def _mock_test_bundle(self) -> Dict[str, Any]:
+        return {
+            "tests": {
+                "tests/test_catalog.py": '''from shop.catalog import get_price, list_products
+
+def test_catalog_lists_products():
+    names = [item["name"] for item in list_products()]
+    assert names == ["keyboard", "mouse", "monitor"]
+
+def test_catalog_price_lookup():
+    assert get_price("mouse") == 49.0
 ''',
-          "tests/test_main.py": '''from main import main
+                "tests/test_main.py": '''from main import checkout_total
 
 def test_main_returns_message():
-    assert main("Bob") == "Hello, Bob!"
-'''
+    assert checkout_total(["keyboard", "mouse"]) == 148.0
+''',
+                "tests/test_cart.py": '''from shop.cart import calculate_total
+
+def test_cart_total_uses_lookup():
+    prices = {"keyboard": 99.0, "mouse": 49.0}
+    total = calculate_total(["keyboard", "mouse"], prices.__getitem__)
+    assert total == 148.0
+''',
+            },
+            "run_command": "pytest -q",
         }

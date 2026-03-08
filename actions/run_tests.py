@@ -19,4 +19,7 @@ class RunTestsAction(Action):
             super().__init__(name="RunTestsAction")
 
     async def run(self, repo_root, run_command, runtime_adapter):
-        return runtime_adapter.run_tests(repo_root, run_command)
+        result = runtime_adapter.run_tests(repo_root, run_command)
+        if hasattr(result, "__await__"):
+            return await result
+        return result

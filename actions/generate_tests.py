@@ -10,6 +10,8 @@ except ImportError:
         async def run(self, *args, **kwargs):
             raise NotImplementedError
 
+from core.schemas import validate_qa_test_bundle
+
 QA_PROMPT_FALLBACK = """你是QA。根据SDS为pytest生成测试套件与运行策略(run_command)。
 输出严格JSON：{{"tests": {{"tests/test_xxx.py": "<content>"...}}, "run_command": "pytest -q"}}
 SDS:
@@ -31,6 +33,6 @@ class GenerateTestsAction(Action):
 
     async def run(self, sds, llm):
         prompt = self._build_prompt(sds)
-        tests = await llm.files(prompt)
-        run_command = "pytest -q"
-        return {"tests": tests, "run_command": run_command}
+        bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
+        validate_qa_test_bundle(bundle)
+        return bundle
