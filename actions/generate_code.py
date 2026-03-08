@@ -1,5 +1,6 @@
 # actions/generate_code.py
 from __future__ import annotations
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 try:
@@ -16,24 +17,30 @@ from core.ast_utils import to_brief
 from core.text_utils import strip_code_fences
 
 DEV_PROMPT_FALLBACK = """# FILE_PATH: {file_path}
-你是资深开发工程师，负责实现或修复单个文件。
-约束：
-- 只能写入目标文件：{file_path}；不得创建其他文件
-- 参考的其他文件信息仅限简报(函数/类签名等)，不得请求源码
-- 必须实现interfaces中声明的接口；可以添加必要的内部辅助函数
-- 确保代码可被pytest执行；提供必要的类型注解与文档字符串
-- 输出仅为该文件的完整源代码，无解释说明
+你是资深开发工程师。你的任务是实现或修复单个源码文件，并保证结果可直接写入目标仓库。
 
-职责：
+输出契约：
+- 只输出目标文件的完整源码。
+- 不要输出 Markdown、代码块、解释、注释性前言或任何额外文本。
+- 不要创建、修改或提议修改除目标文件之外的其他文件。
+
+实现约束：
+- 目标文件路径固定为 `{file_path}`。
+- 必须实现 `interfaces` 中声明的函数、类和方法；可以添加必要的内部辅助函数，但不要无故扩展对外接口。
+- 只能依赖已提供的文件简报，不得假设能读取其他文件的完整源码。
+- 代码必须兼容当前 PoC 的 Python + pytest 执行环境。
+- 优先提供清晰的类型注解、稳定的公开接口和必要的文档字符串。
+
+目标文件职责：
 {responsibilities}
 
-interfaces：
+接口定义：
 {interfaces_pretty}
 
 其他文件简报（只读）：
 {briefs_pretty}
 
-若为修复任务，以下为失败与日志片段（仅摘要）：
+修复上下文（若无则忽略）：
 {issues_excerpt}
 """
 
@@ -46,6 +53,12 @@ class GenerateCodeAction(Action):
             # 兼容我们自带的占位 Action(name: str="")
             super().__init__(name="GenerateCodeAction")
         self.llm = llm
+
+    def _load_prompt_template(self) -> str:
+        p = Path(__file__).resolve().parents[1] / "prompts" / "developer_prompt.md"
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+        return DEV_PROMPT_FALLBACK
 
     def _build_prompt(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], issues: Optional[Dict[str, Any]] = None) -> str:
         functions = file_spec["interfaces"].get("functions", [])
@@ -77,7 +90,7 @@ class GenerateCodeAction(Action):
             stack = issues.get("stack", "")
             issues_excerpt = stack[:2000]  # 控制长度，避免爆上下文
 
-        tpl = DEV_PROMPT_FALLBACK
+        tpl = self._load_prompt_template()
         return tpl.format(
             file_path=file_spec["path"],
             responsibilities=file_spec.get("responsibilities", ""),

@@ -11,10 +11,12 @@ class RepoManager:
         root: str,
         allowed_files_all: Set[str],
         allowed_files_by_agent: Dict[str, Set[str]],
+        git_enabled: bool = True,
     ):
         self.root = root
         self.allowed_files_all = allowed_files_all
         self.allowed_files_by_agent = allowed_files_by_agent
+        self.git_enabled = git_enabled
 
     def _relpath(self, path: str) -> str:
         # 标准化为仓库根的相对路径
@@ -101,9 +103,16 @@ class RepoManager:
 
     # Git 支持
     def _is_git_repo(self) -> bool:
+        if not self.git_enabled:
+            return False
         return os.path.isdir(os.path.join(self.root, ".git"))
 
+    def _ensure_git_allowed(self, operation: str = "git operation"):
+        if not self.git_enabled:
+            raise PermissionError(f"Git collaboration disabled: {operation} is not allowed")
+
     def _git(self, *args, check=True) -> subprocess.CompletedProcess:
+        self._ensure_git_allowed("git command execution")
         return subprocess.run(
             ["git", *args],
             cwd=self.root,
@@ -113,6 +122,8 @@ class RepoManager:
         )
 
     def _ensure_git(self, author_name: Optional[str] = None, author_email: Optional[str] = None):
+        if not self.git_enabled:
+            return
         if shutil.which("git") is None:
             return
 
@@ -135,6 +146,8 @@ class RepoManager:
         Stage and commit all changes in the repo root.
         Returns the commit hash, or None if git is not available.
         """
+        if not self.git_enabled:
+            return None
         if shutil.which("git") is None:
             return None
 
@@ -328,6 +341,8 @@ class RepoManager:
         - 返回提交的 commit hash；若系统不存在 git 或无改动则返回 None。
         - 跳过空提交并避免抛出异常。
         """
+        if not self.git_enabled:
+            return None
         if shutil.which("git") is None:
             return None
 

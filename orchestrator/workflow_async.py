@@ -12,6 +12,7 @@ from core.schemas import validate_sds
 from utils.sds_parser import parse_sds
 from utils.allowed_files import flatten_repo_structure
 from utils.event_bus_async import AsyncEventBus
+from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime_async import PythonRuntimeAsync
 from utils.logger import get_logger, StageTimer
 
@@ -20,8 +21,14 @@ class MultiAgentCodegenWorkflowAsync:
         self.ctx = ctx
         self.log = get_logger("workflow")
 
+    def _rag_client(self):
+        if not getattr(self.ctx.cfg.rag, "enabled", False):
+            return None
+        return self.ctx.rag
+
     async def _collect_sds(self, question: str) -> List[Dict[str, Any]]:
-        archs = [ArchitectAgent(name=f"Architect-{i+1}", llm=self.ctx.llm, rag=self.ctx.rag) for i in range(self.ctx.cfg.architects)]
+        rag_client = self._rag_client()
+        archs = [ArchitectAgent(name=f"Architect-{i+1}", llm=self.ctx.llm, rag=rag_client) for i in range(self.ctx.cfg.architects)]
         async def one(a):
             for _ in range(self.ctx.cfg.sds_retry + 1):
                 try:
@@ -42,9 +49,14 @@ class MultiAgentCodegenWorkflowAsync:
         with StageTimer(self.log, "architect_phase"):
             sds_list = await self._collect_sds(question)
         with StageTimer(self.log, "cto_selection"):
-            cto = CTOAgent(llm=self.ctx.llm, rag=self.ctx.rag)
+            cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
             decision = await cto.choose(question, sds_list)
-            chosen_sds = decision["chosen_sds"]
+            chosen_sds = build_runtime_sds_json(
+                decision["chosen_sds"],
+                dynamic_enabled=self.ctx.cfg.developer_allocation.dynamic_enabled,
+                fixed_agent_count=self.ctx.cfg.developer_allocation.fixed_agents,
+                assignment_seed=self.ctx.cfg.developer_allocation.assignment_seed,
+            )
             sds = parse_sds(chosen_sds)
 
         allowed_all: Set[str] = set(flatten_repo_structure(chosen_sds["repo_structure"]))
@@ -55,7 +67,12 @@ class MultiAgentCodegenWorkflowAsync:
         allowed_by_agent["QA"] = tests_files
 
         repo_root = self.ctx.make_repo_root()
-        repo = RepoManager(repo_root, allowed_files_all=allowed_all, allowed_files_by_agent=allowed_by_agent)
+        repo = RepoManager(
+            repo_root,
+            allowed_files_all=allowed_all,
+            allowed_files_by_agent=allowed_by_agent,
+            git_enabled=self.ctx.cfg.git.enabled,
+        )
         repo.init_structure(sds.repo_structure)
         brief_mgr = BriefManager()
         bus = AsyncEventBus()

@@ -13,6 +13,7 @@ from core import models
 from utils.sds_parser import parse_sds
 from utils.allowed_files import flatten_repo_structure
 from utils.event_bus import EventBus
+from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime import PythonRuntime
 import os
 
@@ -20,8 +21,14 @@ class MultiAgentCodegenWorkflow:
     def __init__(self, ctx):
         self.ctx = ctx
 
+    def _rag_client(self):
+        if not getattr(self.ctx.cfg.rag, "enabled", False):
+            return None
+        return self.ctx.rag
+
     async def _collect_sds(self, question: str) -> List[Dict[str, Any]]:
-        archs = [ArchitectAgent(name=f"Architect-{i+1}", llm=self.ctx.llm, rag=self.ctx.rag) for i in range(self.ctx.cfg.architects)]
+        rag_client = self._rag_client()
+        archs = [ArchitectAgent(name=f"Architect-{i+1}", llm=self.ctx.llm, rag=rag_client) for i in range(self.ctx.cfg.architects)]
         async def one(a):
             last_err = None
             for _ in range(self.ctx.cfg.sds_retry + 1):
@@ -43,9 +50,14 @@ class MultiAgentCodegenWorkflow:
         # 1) Architect
         sds_list = await self._collect_sds(question)
         # 2) CTO select
-        cto = CTOAgent(llm=self.ctx.llm, rag=self.ctx.rag)
+        cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
         decision = await cto.choose(question, sds_list)
-        chosen_sds = decision["chosen_sds"]
+        chosen_sds = build_runtime_sds_json(
+            decision["chosen_sds"],
+            dynamic_enabled=self.ctx.cfg.developer_allocation.dynamic_enabled,
+            fixed_agent_count=self.ctx.cfg.developer_allocation.fixed_agents,
+            assignment_seed=self.ctx.cfg.developer_allocation.assignment_seed,
+        )
         sds = parse_sds(chosen_sds)  # models.SDS
 
         # 3) Repo init with permissions
@@ -76,7 +88,8 @@ class MultiAgentCodegenWorkflow:
         repo = RepoManager(
             repo_root,
             allowed_files_all=allowed_all,
-            allowed_files_by_agent=allowed_by_agent
+            allowed_files_by_agent=allowed_by_agent,
+            git_enabled=self.ctx.cfg.git.enabled,
         )
         repo.init_structure(sds.repo_structure)
 

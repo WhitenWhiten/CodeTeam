@@ -20,6 +20,16 @@ class LLMConfig(BaseModel):
     base_url: Optional[str] = "https://api.openai-proxy.org/v1"
 
 
+class GitConfig(BaseModel):
+    enabled: bool = True
+
+
+class DeveloperAllocationConfig(BaseModel):
+    dynamic_enabled: bool = True
+    fixed_agents: int = 4
+    assignment_seed: Optional[int] = None
+
+
 class SystemConfig(BaseModel):
     architects: int = 3
     sds_retry: int = 1
@@ -30,6 +40,12 @@ class SystemConfig(BaseModel):
     async_mode: bool = True
     llm: LLMConfig = LLMConfig()
     rag: RAGConfig = RAGConfig()
+    git: GitConfig = GitConfig()
+    developer_allocation: DeveloperAllocationConfig = DeveloperAllocationConfig()
+
+
+def _parse_bool(value: str) -> bool:
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def load_config(path: str = None) -> SystemConfig:
@@ -53,15 +69,31 @@ def load_config(path: str = None) -> SystemConfig:
         cfg.workspace = workspace
 
     async_mode = os.getenv("CODETEAM_ASYNC_MODE")
-    if async_mode:
-        cfg.async_mode = async_mode.lower() in {"1", "true", "yes", "on"}
+    if async_mode is not None:
+        cfg.async_mode = _parse_bool(async_mode)
 
     rag_enabled = os.getenv("CODETEAM_RAG_ENABLED")
-    if rag_enabled:
-        cfg.rag.enabled = rag_enabled.lower() in {"1", "true", "yes", "on"}
+    if rag_enabled is not None:
+        cfg.rag.enabled = _parse_bool(rag_enabled)
 
     corpus_file = os.getenv("CODETEAM_RAG_CORPUS")
     if corpus_file:
         cfg.rag.corpus_file = corpus_file
+
+    git_enabled = os.getenv("CODETEAM_GIT_COLLAB_ENABLED")
+    if git_enabled is not None:
+        cfg.git.enabled = _parse_bool(git_enabled)
+
+    dynamic_dev = os.getenv("CODETEAM_DYNAMIC_DEVELOPER_ASSIGNMENT_ENABLED")
+    if dynamic_dev is not None:
+        cfg.developer_allocation.dynamic_enabled = _parse_bool(dynamic_dev)
+
+    fixed_agents = os.getenv("CODETEAM_FIXED_DEVELOPER_AGENTS")
+    if fixed_agents:
+        cfg.developer_allocation.fixed_agents = max(1, int(fixed_agents))
+
+    assignment_seed = os.getenv("CODETEAM_DEVELOPER_ASSIGNMENT_SEED")
+    if assignment_seed:
+        cfg.developer_allocation.assignment_seed = int(assignment_seed)
 
     return cfg

@@ -56,9 +56,9 @@ class LLMClient:
               {"path": "cart.py", "type": "file"}
             ]},
             {"path": "tests", "type": "dir", "children": [
-              {"path": "test_main.py", "type": "file"},
               {"path": "test_catalog.py", "type": "file"},
-              {"path": "test_cart.py", "type": "file"}
+              {"path": "test_cart.py", "type": "file"},
+              {"path": "test_checkout.py", "type": "file"}
             ]}
           ],
           "file_specs": [
@@ -173,9 +173,9 @@ def test_catalog_lists_products():
 def test_catalog_price_lookup():
     assert get_price("mouse") == 49.0
 ''',
-                "tests/test_main.py": '''from main import checkout_total
+                "tests/test_checkout.py": '''from main import checkout_total
 
-def test_main_returns_message():
+def test_checkout_total():
     assert checkout_total(["keyboard", "mouse"]) == 148.0
 ''',
                 "tests/test_cart.py": '''from shop.cart import calculate_total
