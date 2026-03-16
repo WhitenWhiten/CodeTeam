@@ -1,5 +1,6 @@
 <div align="center">
   <h1>CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation</h1>
+</div>
 <div align="center">  
 	<p>
     <a href="https://github.com/WhitenWhiten/CodeTeam">
