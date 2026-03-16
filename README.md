@@ -1,6 +1,82 @@
-# Replication Manual for the Paper: *CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation*
+<div align="center">
+  <h1>CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation</h1>
+<div align="center">  
+	<p>
+    <a href="https://github.com/WhitenWhiten/CodeTeam">
+      <img src="https://img.shields.io/badge/Code-GitHub-2d333b?style=flat-square&logo=github" alt="github">
+    </a>
+    <a href="">
+      <img src="https://img.shields.io/badge/Paper-arXiv-b31b1b?style=flat-square&logo=arxiv&logoColor=white" alt="arXiv">
+    </a>
+  </p>
+</div>
 
-This repository provides the replication package for the paper: *CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation*. The project studies natural language to repository generation (NL2Repo), where a system must build an entire runnable repository from a requirements document. CodeTeam is designed as a multi-agent workflow for this setting, and the replication package is organized around the experimental settings, benchmarks, and ablation studies described in the paper.
+# CodeTeam
+
+**CodeTeam** is an LLM-powered multi-agent framework for repository-level code generation.
+Given a project requirements document, CodeTeam aims to generate an entire repository from an empty workspace through coordinated planning, decision making, implementation, and repair.
+The framework is designed for the natural language to repository generation (NL2Repo) setting, where systems must reason about file structures, interfaces, dependencies, and cross-file implementation details at the repository level.
+
+## Framework Overview
+
+<div align="center">
+  <img src="img/process.png" alt="CodeTeam framework overview" width="90%">
+</div>
+
+CodeTeam organizes repository generation into a multi-agent workflow.
+Multiple Architect Agents first propose alternative software design sketches (SDSs), a CTO Agent selects and normalizes the final plan, Developer Agents implement files under dependency-aware scheduling, and a QA Agent tests and repairs the generated repository iteratively.
+When retrieval is enabled, architects are additionally grounded with design-oriented references retrieved from a curated corpus of public GitHub repositories.
+
+## ✨ Features
+
+- **Multi-Agent Repository Generation**: CodeTeam decomposes repository-level code generation into specialized roles, including Architect, CTO, Developer, and QA agents.
+- **Planning with Software Design Sketches**: Architect Agents generate SDSs that specify repository structure, interfaces, dependencies, and developer ownership before implementation begins.
+- **Dynamic Developer Allocation**: The framework instantiates a task-specific number of Developer Agents based on the selected design plan instead of relying on a fixed assignment.
+- **Git-Based Coordination**: Developer Agents coordinate through lightweight Git-style updates to propagate interface and dependency changes across files.
+- **Iterative QA Repair Loop**: A QA Agent generates lightweight tests, executes the workspace, summarizes failures, and triggers repair until convergence or budget exhaustion.
+- **Optional RAG Grounding**: Retrieval can be enabled to ground architectural planning with design-oriented references from public GitHub repositories.
+
+## 🚀 Quick Start
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/WhitenWhiten/CodeTeam
+cd CodeTeam
+```
+
+### 2. Create the environment
+
+```bash
+conda create -n codeteam python=3.11 -y
+conda activate codeteam
+pip install -r requirements.txt
+```
+
+### 3. Prepare configuration
+
+Set up the required model, runtime, and workflow-related configurations according to your local environment.
+If your project uses retrieval, make sure the retrieval corpus and related paths are configured properly before running the pipeline.
+
+### 4. Run CodeTeam
+
+Use the project entry script or application bootstrap to start a repository-generation run:
+
+```bash
+python app/main.py
+```
+
+If your local entrypoint is different, replace the command above with the corresponding startup script used in this repository.
+
+### 5. Inspect generated repositories
+
+Generated repositories are written to the workspace directory after execution:
+
+```bash
+ls workspace/
+```
+
+You can then run the generated project, inspect intermediate artifacts, or execute the repository test workflow for further evaluation.
 
 ## ⚙️ CodeTeam Workflow
 
