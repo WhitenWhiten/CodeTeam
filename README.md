@@ -116,6 +116,7 @@ CodeTeam/
 |-- actions/              # Action layer for Architect, CTO, Developer, and QA tasks
 |-- app/                  # Application entrypoints and runtime bootstrap
 |-- core/                 # Infrastructure for models, schemas, and repository management
+|-- img/         		  # Images resources for this package
 |-- orchestrator/         # Workflow orchestration across all agents
 |-- prompts/              # External prompt templates used by different roles
 |-- rag/                  # Retrieval-augmented generation logic and local corpus assets
@@ -125,7 +126,8 @@ CodeTeam/
 |-- tests/                # Test suite for the repository itself
 |-- utils/                # utilities for events, logging, routing, and SDS parsing
 |-- workspace/            # Generated output repositories from workflow runs
-\-- REPOSITORY_STRUCTURE.md
+|-- requirements.txt      # List of python run-time requirements 
+\-- README.md			  # Description of this replication package
 ```
 
 ## 📝 Citation
