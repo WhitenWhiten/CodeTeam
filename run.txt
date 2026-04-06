@@ -1,3 +1,0 @@
-conda activate macg
-python -m app.main
-find . -name "pycache" -type d -exec rm -rf {} +    // 清理缓存
