@@ -127,7 +127,7 @@ CodeTeam/
 |-- utils/                # utilities for events, logging, routing, and SDS parsing
 |-- workspace/            # Generated output repositories from workflow runs
 |-- requirements.txt      # List of python run-time requirements 
-\-- README.md			  # Description of this replication package
+|-- README.md			  # Description of this replication package
 ```
 
 ## 📝 Citation
