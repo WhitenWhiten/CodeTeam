@@ -85,7 +85,7 @@ CodeTeam generates a repository from an empty workspace in three stages: plannin
 
 After that, a CTO Agent evaluates the candidate SDSs, selects one plan, and normalizes it into an executable contract for the downstream stages. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while a lightweight Git-based coordination mechanism is used to propagate interface changes across agents. Finally, a QA Agent generates lightweight tests, executes the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted.
 
-In the experiments reported in the paper, all agents share the same backbone model family, Qwen3-72B-Instruct. The repository includes both prompting-based and supervised fine-tuning (SFT) settings for controlled comparison with prior NL2Repo baselines.
+In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. The repository includes both prompting-based and supervised fine-tuning (SFT) settings for controlled comparison with prior NL2Repo baselines.
 
 ## 📊 Benchmarks
 
@@ -109,6 +109,46 @@ The full CodeTeam setting includes architect competition, RAG grounding, dynamic
 
 These ablations are mainly evaluated on SketchEval. In addition to end-to-end SketchBLEU, the study also examines planning-stage and coordination-stage diagnostics, such as SDS parse success, structural validity, plan diversity, QA rounds, interface-mismatch failures, and average context size.
 
+## 📦 Replication Data
+
+The `data/` directory contains the raw experiment data and an analysis script used to reproduce all tables and inline statistics reported in the paper.
+
+### Data file
+
+**`experiment_results.xlsx`** is a multi-sheet Excel workbook. Each sheet stores task-level measurements across three random seeds.
+
+| Sheet | Paper reference | Description |
+|---|---|---|
+| `SketchEval_main` | Table 1 | Main SketchEval results. Columns: `task_id`, `difficulty` (easy / medium / hard), `method`, `setting` (PE / SFT), `seed`, `SketchBLEU`. |
+| `SketchBLEU_decomp` | Table 2 | Sub-score decomposition of SketchBLEU into four components: `B` (n-gram), `BW` (weighted n-gram), `MS` (structural), `MD` (dataflow). |
+| `NL2RepoBench_main` | Table 5 | NL2Repo-Bench execution results. Columns: `task_id`, `difficulty`, `method`, `setting`, `seed`, `pass_rate`, `all_tests_pass`. |
+| `NL2RepoBench_errors` | Table 4 | Failure category distribution. Columns: `method`, `task_id`, `failure_category` (Packaging / Import / API\_mismatch / Logic). |
+| `Ablation_SketchEval` | Table 6 | Ablation SketchBLEU scores for four variants: Full, w/o RAG, w/o dynamic, w/o Git. |
+| `Planning_diagnostics` | Table 7 | Planning-stage diagnostics: `sds_parse_success`, `structural_validity`, `plan_diversity` for with\_RAG / w/o\_RAG. |
+| `Efficiency_diagnostics` | Table 8 | Coordination-stage diagnostics: `qa_rounds`, `mismatch_failures`, `avg_context_k_tokens`. |
+| `QA_convergence` | Section 5.3 | QA iteration convergence curves: `task_id`, `seed`, `iteration`, `SketchBLEU`. |
+
+### Analysis script
+
+**`analyze_experiment_results.py`** reads the Excel workbook and reproduces every table and inline statistic in the paper.
+
+**Dependencies:**
+
+```bash
+pip install numpy pandas openpyxl scipy
+```
+
+**Usage:**
+
+```bash
+cd data
+python analyze_experiment_results.py
+```
+
+The script prints human-readable formatted tables to the console (Tables 1--8, Win/Tie/Loss counts, statistical significance tests, and key inline comparisons) and writes a machine-readable summary to `statistics_report.json`.
+
+Statistical tests included: Wilcoxon signed-rank test, bootstrap 95\% confidence intervals, and sign test (CodeTeam vs. CodeS).
+
 ## 📁 Repository Structure
 
 ```plaintext
@@ -116,6 +156,7 @@ CodeTeam/
 |-- actions/              # Action layer for Architect, CTO, Developer, and QA tasks
 |-- app/                  # Application entrypoints and runtime bootstrap
 |-- core/                 # Infrastructure for models, schemas, and repository management
+|-- data/                 # Experiment data and analysis scripts for paper replication
 |-- img/         		  # Images resources for this package
 |-- orchestrator/         # Workflow orchestration across all agents
 |-- prompts/              # External prompt templates used by different roles
