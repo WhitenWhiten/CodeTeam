@@ -1,15 +1,15 @@
 """
 analyze_experiment_results.py
 ==============================
-Read task-level raw data from experiment_results.xlsx and
-generate all paper tables + inline body-text statistics.
+从 experiment_results.xlsx 读取 task-level 原始数据，
+生成论文中所有表格 + 正文统计量。
 
-Output:
-  - Console: human-readable formatted tables
-  - statistics_report.json: machine-readable JSON
+输出:
+  - 控制台: human-readable 格式化表格
+  - statistics_report.json: 机器可读 JSON
 
-Usage: python analyze_experiment_results.py
-Dependencies: pip install numpy pandas openpyxl scipy
+运行: python analyze_experiment_results.py
+依赖: pip install numpy pandas openpyxl scipy
 """
 
 import json, sys
@@ -20,16 +20,16 @@ from scipy import stats as sp_stats
 XLSX = "experiment_results.xlsx"
 JSON_OUT = "statistics_report.json"
 
-report = {}  # final output JSON
+report = {}  # 最终输出 JSON
 
 
 def fmt(val, prec=1):
-    """Format a numeric value to given precision."""
+    """格式化数值"""
     return round(float(val), prec)
 
 
 def mean_std_str(arr, prec=1):
-    """Return a 'mean±std' string."""
+    """返回 'mean±std' 字符串"""
     m = np.mean(arr)
     s = np.std(arr, ddof=0)
     return f"{m:.{prec}f}±{s:.{prec}f}"
@@ -44,7 +44,7 @@ def print_header(title):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Load data
+#  读入数据
 # ═══════════════════════════════════════════════════════════
 print(f"Reading {XLSX} ...")
 xls = pd.ExcelFile(XLSX)
@@ -351,10 +351,12 @@ for variant in VARIANT_ORDER:
 
     if variant == "Full":
         full_all_mean = all_mean
+        full_all_mean_rounded = row_data["all"]["mean"]   # rounded value for consistency
         rel_drop_str = "--"
         row_data["rel_drop"] = None
     else:
-        rd = (full_all_mean - all_mean) / full_all_mean * 100
+        # compute rel_drop from rounded display values for reader-verifiability
+        rd = (full_all_mean_rounded - row_data["all"]["mean"]) / full_all_mean_rounded * 100
         rel_drop_str = f"{rd:.1f}%"
         row_data["rel_drop"] = fmt(rd)
 
@@ -424,7 +426,7 @@ report["table8_efficiency_diagnostics"] = table8
 
 
 # ═══════════════════════════════════════════════════════════
-#  QA Convergence (body text lines 889-892)
+#  QA Convergence (正文 line 889-892)
 # ═══════════════════════════════════════════════════════════
 print_header("QA Convergence Curve (line 889-892)")
 
@@ -446,7 +448,7 @@ report["qa_convergence"] = qa_conv
 
 
 # ═══════════════════════════════════════════════════════════
-#  Inline: Absolute / relative improvements (key body-text numbers)
+#  Inline: Absolute / relative improvements (正文关键数据)
 # ═══════════════════════════════════════════════════════════
 print_header("Inline Statistics: Key Comparisons from Body Text")
 
@@ -533,7 +535,7 @@ report["ablation_per_difficulty_drops"] = ablation_drops
 
 
 # ═══════════════════════════════════════════════════════════
-#  Sign test (body text line 666)
+#  Sign test (正文 line 666)
 # ═══════════════════════════════════════════════════════════
 print_header("Sign Test (line 666)")
 
@@ -559,7 +561,7 @@ report["sign_test_sketcheval"] = sign_tests
 
 
 # ═══════════════════════════════════════════════════════════
-#  Write JSON output
+#  输出 JSON
 # ═══════════════════════════════════════════════════════════
 print_header(f"Writing {JSON_OUT}")
 
