@@ -17,40 +17,40 @@ from core.ast_utils import to_brief
 from core.text_utils import strip_code_fences
 
 DEV_PROMPT_FALLBACK = """# FILE_PATH: {file_path}
-你是资深开发工程师。你的任务是实现或修复单个源码文件，并保证结果可直接写入目标仓库。
+You are a senior software engineer. Your task is to implement or fix one source file and ensure the result can be written directly to the target repository.
 
-输出契约：
-- 只输出目标文件的完整源码。
-- 不要输出 Markdown、代码块、解释、注释性前言或任何额外文本。
-- 不要创建、修改或提议修改除目标文件之外的其他文件。
+Output contract:
+- Output only the complete source code for the target file.
+- Do not output Markdown, code fences, explanations, introductory comments, or any extra text.
+- Do not create, modify, or propose changes to files other than the target file.
 
-实现约束：
-- 目标文件路径固定为 `{file_path}`。
-- 必须实现 `interfaces` 中声明的函数、类和方法；可以添加必要的内部辅助函数，但不要无故扩展对外接口。
-- 只能依赖已提供的文件简报，不得假设能读取其他文件的完整源码。
-- 代码必须兼容当前 PoC 的 Python + pytest 执行环境。
-- 优先提供清晰的类型注解、稳定的公开接口和必要的文档字符串。
+Implementation constraints:
+- The target file path is fixed as `{file_path}`.
+- You must implement the functions, classes, and methods declared in `interfaces`; you may add necessary internal helpers, but do not expand the public interface without reason.
+- Depend only on the provided file briefs; do not assume access to the full source code of other files.
+- The code must be compatible with the current PoC's Python + pytest execution environment.
+- Prefer clear type annotations, stable public interfaces, and useful docstrings.
 
-目标文件职责：
+Target file responsibilities:
 {responsibilities}
 
-接口定义：
+Interface definitions:
 {interfaces_pretty}
 
-其他文件简报（只读）：
+Other file briefs (read-only):
 {briefs_pretty}
 
-修复上下文（若无则忽略）：
+Fix context (ignore if empty):
 {issues_excerpt}
 """
 
 class GenerateCodeAction(Action):
     def __init__(self, llm=None):
         try:
-            # 兼容 metagpt.Action 的无参构造
+            # Compatible with metagpt.Action's no-argument constructor.
             super().__init__()
         except TypeError:
-            # 兼容我们自带的占位 Action(name: str="")
+            # Compatible with the local placeholder Action(name: str="").
             super().__init__(name="GenerateCodeAction")
         self.llm = llm
 
@@ -72,7 +72,7 @@ class GenerateCodeAction(Action):
                 iface_lines.append(f"  init: {c['init_signature']}")
             for m in c.get("methods", []):
                 iface_lines.append(f"  method: {m['signature']}  # {m.get('doc','')}")
-        interfaces_pretty = "\n".join(iface_lines) if iface_lines else "(无)"
+        interfaces_pretty = "\n".join(iface_lines) if iface_lines else "(none)"
 
         brief_lines = []
         for path, b in briefs.items():
@@ -83,12 +83,12 @@ class GenerateCodeAction(Action):
                 brief_lines.append(f"  - class {c['name']}")
                 for m in c.get("methods", []):
                     brief_lines.append(f"    - {m['signature']}")
-        briefs_pretty = "\n".join(brief_lines) if brief_lines else "(无)"
+        briefs_pretty = "\n".join(brief_lines) if brief_lines else "(none)"
 
         issues_excerpt = ""
         if issues:
             stack = issues.get("stack", "")
-            issues_excerpt = stack[:2000]  # 控制长度，避免爆上下文
+            issues_excerpt = stack[:2000]  # Keep the prompt compact.
 
         tpl = self._load_prompt_template()
         return tpl.format(
@@ -96,7 +96,7 @@ class GenerateCodeAction(Action):
             responsibilities=file_spec.get("responsibilities", ""),
             interfaces_pretty=interfaces_pretty,
             briefs_pretty=briefs_pretty,
-            issues_excerpt=issues_excerpt or "(无)"
+            issues_excerpt=issues_excerpt or "(none)"
         )
 
     def _exported_symbols(self, brief: Dict[str, Any]) -> list[str]:
@@ -167,7 +167,7 @@ class GenerateCodeAction(Action):
         prompt = self._build_prompt(file_spec, briefs, issues)
         raw_code = await llm.text(prompt)
 
-        # 去除 Markdown/HTML 代码块围栏，确保写入与 AST 解析的源码干净
+        # Strip Markdown/HTML code fences so writes and AST parsing receive clean source.
         code = strip_code_fences(raw_code)
 
         lock_factory = getattr(repo_manager, "collaboration_lock", None)
@@ -180,13 +180,13 @@ class GenerateCodeAction(Action):
             if checkout:
                 checkout(agent_id)
 
-            # change_type: 若文件已存在则为 modify，否则 create
+            # Use modify for existing files and create for new files.
             change_type = "modify" if repo_manager.exists(file_spec["path"]) else "create"
 
-            # 写入代码（按 agent 权限）
+            # Write code subject to agent permissions.
             repo_manager.write_file(file_spec["path"], code, agent_id=agent_id)
 
-            # 生成简报，容错处理语法错误（例如未完全移除围栏或生成代码不合法）
+            # Build a brief and tolerate syntax errors from malformed generated code.
             try:
                 brief = to_brief(code)
             except SyntaxError:
@@ -218,7 +218,7 @@ class GenerateCodeAction(Action):
                 "related_files_brief_used": list(briefs.keys())
             }
 
-            # 依赖现有 RepoManager 的 commit_file 实现
+            # Delegate commit details to RepoManager.commit_file.
             repo_manager.commit_file(file_spec["path"], ur, agent_id)
             brief["latest_update_reason"] = ur
             brief["compatibility_note"] = compatibility_note

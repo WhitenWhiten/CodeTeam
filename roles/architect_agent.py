@@ -24,5 +24,17 @@ class ArchitectAgent(Role):
         self.rag = rag
         self._gen = GenerateSDSAction(llm=llm)
 
-    async def propose_sds(self, question: str) -> dict:
-        return await self._gen.run(question=question, rag_client=self.rag)
+    async def propose_sds(
+        self,
+        question: str,
+        design_preference: str = "",
+        claimed_summary: str = "",
+        return_trace: bool = False,
+    ) -> dict:
+        return await self._gen.run(
+            question=question,
+            rag_client=self.rag,
+            design_preference=design_preference,
+            claimed_summary=claimed_summary,
+            return_trace=return_trace,
+        )

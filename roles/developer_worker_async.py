@@ -56,7 +56,7 @@ class DeveloperWorkerAsync:
                 if extra_count >= 2:
                     break
                 extra_count += 1
-                # 同步动作，直接调用
+                # Synchronous action wrapper; call it directly.
                 brief = await self._req.run(target_file=dep, brief_manager=self.briefs)
                 if brief:
                     briefs[dep] = brief

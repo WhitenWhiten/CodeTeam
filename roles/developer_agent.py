@@ -10,7 +10,7 @@ from actions.request_briefing import RequestBriefingAction
 class DeveloperAgent(threading.Thread):
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
                 llm, repo_manager, brief_manager, event_bus):
-        super().__init__(name=agent_id, daemon=True) # 关键：正确调用 Thread.init
+        super().__init__(name=agent_id, daemon=True)  # Correctly initialize Thread.
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
         self.sds_map = sds_map # path -> file_spec dict

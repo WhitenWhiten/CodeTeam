@@ -4,11 +4,11 @@ import time
 import base64
 import requests
 
-# 配置参数：请按需修改
-MIN_STARS = 1000        # 仅获取超过这个星标数量的仓库
-MAX_REPOS = 500          # 最大处理的仓库数量（用于控制脚本运行时间）
-PER_PAGE = 100            # GitHub API 搜索每页条数
-COMMITS_PER_REPO = 30     # 每个仓库抓取的最近提交数量
+# Configuration parameters; adjust as needed.
+MIN_STARS = 1000        # Fetch only repositories above this star count.
+MAX_REPOS = 500          # Maximum repositories to process; controls script runtime.
+PER_PAGE = 100            # GitHub API search results per page.
+COMMITS_PER_REPO = 30     # Recent commits to fetch per repository.
 
 GITHUB_API = "https://api.github.com"
 
@@ -23,10 +23,10 @@ def handle_rate_limit(resp):
     if reset:
         reset_ts = int(reset)
         sleep_sec = max(0, reset_ts - int(time.time()) + 5)
-        print(f"[RateLimit] 触发速率限制，休眠 {sleep_sec} 秒...")
+        print(f"[RateLimit] Rate limit reached; sleeping for {sleep_sec} seconds...")
         time.sleep(sleep_sec)
     else:
-        # 默认短暂休眠以避免连锁失败
+        # Default to a short sleep to avoid cascading failures.
         time.sleep(60)
 
 def get_repos(min_stars, session, max_results=MAX_REPOS):
@@ -45,7 +45,7 @@ def get_repos(min_stars, session, max_results=MAX_REPOS):
             handle_rate_limit(resp)
             continue
         if not resp.ok:
-            print(f"Error: 读取仓库列表失败，状态码 {resp.status_code}，信息: {resp.text}")
+            print(f"Error: failed to read repository list, status {resp.status_code}, message: {resp.text}")
             break
         data = resp.json()
         items = data.get("items", [])
@@ -93,7 +93,7 @@ def fetch_tree(owner, repo, branch, session):
     return tree
 
 def build_nested_tree(entries):
-    # 将路径列表转换为嵌套的字典结构
+    # Convert path entries into a nested dictionary tree.
     root = {}
     for e in entries:
         path = e.get("path")
@@ -103,7 +103,7 @@ def build_nested_tree(entries):
         current = root
         for i, part in enumerate(parts):
             if i == len(parts) - 1:
-                # 最后一层，标记为文件
+                # Last level; mark as a file.
                 current[part] = None
             else:
                 if part not in current or current[part] is None:
@@ -112,18 +112,18 @@ def build_nested_tree(entries):
     return root
 
 def stringify_node(name, node_dict):
-    # 将一个目录节点转换成 "name[contents...]" 的表达
+    # Convert a directory node into a "name[contents...]" expression.
     contents = []
     for child in sorted(node_dict.keys()):
         child_node = node_dict[child]
         if child_node is None:
-            contents.append(child)  # 文件名直接作为字符串
+            contents.append(child)  # File names are direct strings.
         else:
             contents.append(stringify_node(child, child_node))
     return f"{name}[" + ", ".join(contents) + "]"
 
 def stringify_root(root_dict):
-    # 将根目录的内容转换成 "[...]" 表达式
+    # Convert root contents into a "[...]" expression.
     elements = []
     for name in sorted(root_dict.keys()):
         node = root_dict[name]
@@ -138,7 +138,7 @@ def fetch_commits(owner, repo, branch, session, max_commits=30):
     params = {"sha": branch, "per_page": max_commits}
     r = session.get(url, params=params)
     if not r.ok:
-        print(f"Warning: 读取提交历史失败 {owner}/{repo}，状态 {r.status_code}")
+        print(f"Warning: failed to read commit history for {owner}/{repo}, status {r.status_code}")
         return []
     data = r.json()
     commits = []
@@ -157,7 +157,7 @@ def main():
     session = requests.Session()
     session.headers.update(get_headers(token))
 
-    print(f"开始检索星标数大于 {MIN_STARS} 的仓库...")
+    print(f"Searching for repositories with more than {MIN_STARS} stars...")
     repos = get_repos(MIN_STARS, session, max_results=MAX_REPOS)
 
     results = []
@@ -166,7 +166,7 @@ def main():
         if not full_name:
             continue
         owner, repo = full_name.split("/", 1)
-        print(f"处理: {full_name} ...")
+        print(f"Processing: {full_name} ...")
         try:
             readme_text = fetch_readme(owner, repo, session)
             default_branch = fetch_default_branch(owner, repo, session)
@@ -183,12 +183,12 @@ def main():
                 "commits": commits
             })
         except Exception as e:
-            print(f"错误: 在处理 {full_name} 时出现异常: {e}")
+            print(f"Error: exception while processing {full_name}: {e}")
 
     with open("github_repos.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    print(f"完成。已将数据写入 github_repos.json，共 {len(results)} 个仓库。")
+    print(f"Done. Wrote {len(results)} repositories to github_repos.json.")
 
 if __name__ == "__main__":
     main()

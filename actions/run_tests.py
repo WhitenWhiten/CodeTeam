@@ -16,9 +16,9 @@ except ImportError:
 class RunTestsAction(Action):
     def __init__(self):
         try:
-            super().__init__()  # 兼容 metagpt.Action
+            super().__init__()  # Compatible with metagpt.Action
         except TypeError:
-        # 兼容我们自带的占位 Action(name: str="")
+        # Compatible with the local placeholder Action(name: str="")
             super().__init__(name="RunTestsAction")
 
     def _safe_test_path(self, path: str) -> Path:

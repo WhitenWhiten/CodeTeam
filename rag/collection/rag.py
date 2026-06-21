@@ -16,10 +16,10 @@ for repo in repos:
    
 
 def compute_cache_path(texts, cache_dir="cache", prefix="corpus_embeddings"):
-    # 基于语料内容生成短哈希，保证语料变动时生成新的缓存文件
+    # Generate a short hash from corpus content so corpus changes create a new cache file.
     os.makedirs(cache_dir, exist_ok=True)
     hasher = hashlib.sha256()
-    # 连接时使用不可混淆的分隔符，避免拼接歧义
+    # Use an unambiguous separator while joining to avoid concatenation ambiguity.
     for t in texts:
         hasher.update(t.encode("utf-8"))
         hasher.update(b"\x1f")  # unit separator
@@ -31,15 +31,15 @@ def compute_or_load_embeddings(model, texts, cache_dir="cache", prefix="corpus_e
     if os.path.exists(emb_path):
         emb = np.load(emb_path)
         if emb.shape[0] == len(texts):
-            print(f"加载缓存向量：{emb_path}")
+            print(f"Loaded cached embeddings: {emb_path}")
             return emb
         else:
-            print("检测到缓存向量条目数与语料不匹配，重新计算向量。")
+            print("Cached embedding count does not match corpus size; recomputing embeddings.")
 
-    print("开始编码语料（可能需要一些时间，取决于语料大小与 CPU 性能）...")
+    print("Encoding corpus; this may take some time depending on corpus size and CPU performance...")
     embeddings = model.encode(texts, convert_to_numpy=True, batch_size=batch_size, show_progress_bar=True)
     np.save(emb_path, embeddings)
-    print(f"已将语料向量保存到 {emb_path}")
+    print(f"Saved corpus embeddings to {emb_path}")
     return embeddings
 
 def l2_normalize(x, axis=1, eps=1e-10):
@@ -50,7 +50,7 @@ def l2_normalize(x, axis=1, eps=1e-10):
     return x / norm
 
 def top_k_similar(corpus_texts, corpus_emb, query, model, top_x=5):
-    # 编码 query
+    # Encode query.
     q_emb = model.encode([query], convert_to_numpy=True)[0]
     corpus_emb_norm = l2_normalize(corpus_emb, axis=1)
     q_emb_norm = l2_normalize(q_emb, axis=0)

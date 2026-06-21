@@ -15,45 +15,47 @@ except ImportError:
 
 from core.schemas import validate_sds
 
-ARCHITECT_PROMPT_FALLBACK = """你是资深软件架构师。你的任务是根据用户需求输出一个可执行的软件设计方案（SDS），供 CTO、Developer 和 QA agent 直接消费。
+ARCHITECT_PROMPT_FALLBACK = """You are a senior software architect. Your task is to produce an executable Software Design Specification (SDS) from the user's requirements for direct use by the CTO, Developer, and QA agents.
 
-输出契约：
-- 只输出单个 JSON 对象，必须符合 SDS Schema。
-- 不要输出 Markdown、代码块、解释、注释或任何额外前后缀文本。
-- 方案必须可直接用于当前 PoC：`tech_stack.language` 必须为 `python`，`tech_stack.test_framework` 必须为 `pytest`。
+Output contract:
+- Output exactly one JSON object that conforms to the SDS Schema.
+- Do not output Markdown, code fences, explanations, comments, or any extra prefix/suffix text.
+- The design must be directly usable by the current PoC: `tech_stack.language` must be `python`, and `tech_stack.test_framework` must be `pytest`.
 
-设计要求：
-- `problem`：准确重述用户需求，覆盖核心目标、主要业务流程和关键边界。
-- `tech_stack`：给出 Python 运行时、主要框架或库，以及实现该需求所需的最小技术集合。
-- `repo_structure`：列出完整仓库结构，并用目录节点的 `children` 表达层级；必须包含业务源码目录与 `tests/` 目录。
-- `repo_structure` 中的测试文件应与实际模块职责或业务行为对应，例如 `tests/test_catalog.py`、`tests/test_cart.py`、`tests/test_checkout.py`；不要硬编码 `tests/test_main.py` 或 `tests/test_utils.py`，除非它们确实由当前设计自然推出。
-- `file_specs`：只描述由 Developer 负责实现的源码文件；每个条目必须包含职责说明、明确的函数或类接口，以及依赖文件路径。
-- `file_specs.dependencies` 中引用的文件必须来自同一份 `repo_structure`，并尽量保持依赖方向清晰、低耦合。
-- `dev_plan`：根据项目复杂度给出合理的 Developer 数量与分工；每个源码文件必须且只能分配给一个 Developer；不要把 `tests/` 下文件分配给 Developer。
-- 一致性要求：`file_specs.path` 必须全部出现在 `repo_structure` 中；`dev_plan` 必须完整覆盖全部源码 `file_specs`，且不能重复分配。
+Design requirements:
+- `problem`: Restate the user's requirements accurately, covering the core goal, main business flows, and key boundaries.
+- `tech_stack`: Provide the Python runtime, primary frameworks or libraries, and the minimal technical set needed to implement the request.
+- `repo_structure`: List the complete repository structure and use directory-node `children` to express hierarchy; it must include business source directories and a `tests/` directory.
+- Test files in `repo_structure` should correspond to real module responsibilities or business behavior, such as `tests/test_catalog.py`, `tests/test_cart.py`, or `tests/test_checkout.py`; do not hardcode `tests/test_main.py` or `tests/test_utils.py` unless they naturally follow from the current design.
+- `file_specs`: Describe only source files implemented by Developers; every entry must include responsibilities, explicit function or class interfaces, and dependency file paths.
+- Files referenced by `file_specs.dependencies` must come from the same `repo_structure`, and dependency direction should be clear and loosely coupled.
+- `dev_plan`: Choose a reasonable number of Developers and assignments based on project complexity; every source file must be assigned to exactly one Developer; do not assign files under `tests/` to Developers.
+- Consistency requirements: every `file_specs.path` must appear in `repo_structure`; `dev_plan` must cover every source `file_specs` entry exactly once, with no duplicate assignments.
 
-设计偏好：
-- 优先拆分为职责清晰、接口明确、便于并行开发的小模块。
-- 优先让公共接口稳定，减少 Developer 之间的隐式耦合。
-- 测试结构应围绕业务模块、关键流程和边界条件组织，而不是沿用固定文件名模板。
+Design preferences:
+- Prefer small modules with clear responsibilities, explicit interfaces, and easy parallel development.
+- Prefer stable public interfaces that reduce implicit coupling between Developers.
+- Organize tests around business modules, key flows, and boundary conditions instead of fixed filename templates.
+- This Architect's specific design preference: {design_preference}
+- To keep candidate designs diverse, avoid reusing top-level module boundaries already claimed by other Architects; use only this summary as a reference and do not copy a full prior design: {claimed_summary}
 
-RAG 使用规则：
-- 如果提供了 RAG 参考，将其视为补充线索而不是硬约束。
-- 当 RAG 参考与用户需求冲突时，优先满足用户需求。
+RAG usage rules:
+- If RAG references are provided, treat them as supplemental hints rather than hard constraints.
+- When RAG references conflict with user requirements, prioritize the user requirements.
 
-用户需求：
+User requirements:
 {question}
 
-RAG参考（可选）：
+RAG references (optional):
 {rag_snippets}
 """
 
 class GenerateSDSAction(Action):
     def __init__(self, llm=None):
         try:
-            super().__init__()  # 兼容 metagpt.Action
+            super().__init__()  # Compatible with metagpt.Action
         except TypeError:
-        # 兼容我们自带的占位 Action(name: str="")
+        # Compatible with the local placeholder Action(name: str="")
             super().__init__(name="GenerateSDSAction")
         self.llm = llm
 
@@ -73,13 +75,33 @@ class GenerateSDSAction(Action):
             parts.append(f"[{i}] {src}\n{txt}")
         return "\n\n".join(parts)
 
-    def _build_prompt(self, q: str, rag_docs: List[Dict[str, Any]]) -> str:
+    def _build_prompt(
+        self,
+        q: str,
+        rag_docs: List[Dict[str, Any]],
+        design_preference: str = "",
+        claimed_summary: str = "",
+    ) -> str:
         tpl = self._load_prompt_template()
-        return tpl.format(question=q, rag_snippets=self._render_rag(rag_docs))
+        return tpl.format(
+            question=q,
+            rag_snippets=self._render_rag(rag_docs),
+            design_preference=design_preference or "balanced architecture",
+            claimed_summary=claimed_summary or "No prior module claims.",
+        )
 
-    async def run(self, question: str, rag_client=None) -> Dict[str, Any]:
+    async def run(
+        self,
+        question: str,
+        rag_client=None,
+        design_preference: str = "",
+        claimed_summary: str = "",
+        return_trace: bool = False,
+    ) -> Dict[str, Any]:
         rag_docs = rag_client.query(question) if rag_client else []
-        prompt = self._build_prompt(question, rag_docs)
+        prompt = self._build_prompt(question, rag_docs, design_preference, claimed_summary)
         sds_json = await self.llm.structured_json(prompt, schema="SDS")
         validate_sds(sds_json)
+        if return_trace:
+            return {"sds": sds_json, "rag_docs": rag_docs, "prompt": prompt}
         return sds_json

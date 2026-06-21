@@ -1,5 +1,6 @@
 from core.llm import LLMClient as MockLLM
 from orchestrator.context import Context
+from utils.run_artifacts import RunArtifacts
 
 
 def bootstrap(cfg):
@@ -29,4 +30,10 @@ def bootstrap(cfg):
         except Exception:
             rag = None
 
-    return Context(cfg=cfg, llm=llm, rag=rag)
+    artifacts_dir = cfg.artifacts_dir
+    if not artifacts_dir:
+        artifacts = RunArtifacts.create_for_workspace(cfg.workspace, enabled=cfg.artifacts_enabled)
+    else:
+        artifacts = RunArtifacts(artifacts_dir, enabled=cfg.artifacts_enabled)
+
+    return Context(cfg=cfg, llm=llm, rag=rag, artifacts=artifacts)

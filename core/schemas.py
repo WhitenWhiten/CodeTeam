@@ -7,7 +7,7 @@ try:
 except ImportError:
     jsonschema = None
 
-# 基础结构 Schema
+# Base structure schema.
 SDS_SCHEMA: Dict[str, Any] = {
   "type": "object",
   "required": ["id", "problem", "tech_stack", "repo_structure", "file_specs", "dev_plan"],
@@ -51,7 +51,7 @@ SDS_SCHEMA: Dict[str, Any] = {
       "properties": {
         "path": {
           "type": "string",
-          "pattern": r"^(?!/)(?!.*\.\.)(?!.*//)[\w\-.~/]+$"  # 防止绝对路径、..、重复//
+          "pattern": r"^(?!/)(?!.*\.\.)(?!.*//)[\w\-.~/]+$"  # Prevent absolute paths, .., and duplicate //.
         },
         "type": {"type": "string", "enum": ["file", "dir"]},
         "children": {
@@ -336,14 +336,14 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
         raise ValueError(f"duplicate files in repo_structure: {duplicates}")
     repo_files = set(repo_file_list)
 
-    # file_specs 覆盖的文件必须存在于 repo_structure
+    # Files covered by file_specs must exist in repo_structure.
     spec_paths = [fs["path"] for fs in sds_json["file_specs"]]
     if len(spec_paths) != len(set(spec_paths)):
         raise ValueError("duplicate file_specs.path entries are not allowed")
     missing = [p for p in spec_paths if p not in repo_files]
     if missing:
         raise ValueError(f"file_specs.path not in repo_structure: {missing}")
-    # dev_plan 必须唯一覆盖 file_specs 中的每个文件且不多不少
+    # dev_plan must cover each file_specs file exactly once.
     assigned = {}
     for a in sds_json["dev_plan"]:
         for fp in a["file_paths"]:
@@ -383,7 +383,7 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
             graph[path].update(target for target in targets if target in spec_set)
     _raise_if_dependency_graph_has_cycle(graph)
 
-    # tech_stack 语言受支持（示例：仅 python）
+    # Supported tech_stack language check; this PoC supports only python.
     if sds_json["tech_stack"]["language"].lower() not in {"python"}:
         raise ValueError("unsupported language in this PoC; only python is supported")
 

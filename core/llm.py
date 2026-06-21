@@ -10,13 +10,13 @@ class LLMClient:
 
     async def text(self, prompt: str) -> str:
         if self._mode == "mock":
-            # 从提示中解析 FILE_PATH
+            # Parse FILE_PATH from the prompt.
             first_line = prompt.splitlines()[0].strip()
             file_path = ""
             if first_line.startswith("# FILE_PATH:"):
                 file_path = first_line.split(":", 1)[1].strip()
             return self._mock_code(file_path)
-        # TODO: 调用真实 LLM
+        # TODO: call the real LLM.
         return ""
 
     # working on this method
@@ -28,20 +28,20 @@ class LLMClient:
                 return {"chosen_index": 0, "rationale": "Mock chooses the first SDS"}
             if schema == "QA_TEST_BUNDLE":
                 return self._mock_test_bundle()
-        # TODO: 调用真实 LLM 并解析JSON
+        # TODO: call the real LLM and parse JSON.
         return {}
 
     async def files(self, prompt: str) -> Dict[str, str]:
         if self._mode == "mock":
             return self._mock_tests()
-        # TODO: 真实 LLM 返回多文件
+        # TODO: return multiple files from the real LLM.
         return {}
 
     # ---- Mock payloads ----
     def _mock_sds(self) -> Dict[str, Any]:
         return {
           "id": "sds-mock-001",
-          "problem": "生成简化版在线商店程序",
+          "problem": "Build a simplified online shop program",
           "tech_stack": {
             "language": "python",
             "frameworks": [],
@@ -64,7 +64,7 @@ class LLMClient:
           "file_specs": [
             {
               "path": "main.py",
-              "responsibilities": "应用入口；提供checkout_total(item_names:list[str])->float，组合商品目录与购物车逻辑",
+              "responsibilities": "Application entry point; provide checkout_total(item_names: list[str]) -> float by combining catalog and cart logic",
               "interfaces": {"functions": [
                 {"name": "checkout_total", "signature": "def checkout_total(item_names: list[str]) -> float:", "doc": "Return the total price for selected products"}
               ], "classes": []},
@@ -72,7 +72,7 @@ class LLMClient:
             },
             {
               "path": "shop/catalog.py",
-              "responsibilities": "商品目录模块；提供基础商品清单与按名称查价能力",
+              "responsibilities": "Product catalog module; provide the base product list and name-based price lookup",
               "interfaces": {"functions": [
                 {"name": "list_products", "signature": "def list_products() -> list[dict]:", "doc": "Return the product catalog"},
                 {"name": "get_price", "signature": "def get_price(name: str) -> float:", "doc": "Return the price of a named product"}
@@ -81,7 +81,7 @@ class LLMClient:
             },
             {
               "path": "shop/cart.py",
-              "responsibilities": "购物车模块；根据商品名称列表和目录价格计算总价",
+              "responsibilities": "Cart module; calculate the total price from product names and catalog prices",
               "interfaces": {"functions": [
                 {"name": "calculate_total", "signature": "def calculate_total(item_names: list[str], price_lookup: callable) -> float:", "doc": "Calculate a cart total from a lookup function"}
               ], "classes": []},
@@ -94,7 +94,7 @@ class LLMClient:
             {"developer_id": "Dev-3", "file_paths": ["shop/cart.py"]}
           ],
           "constraints": {},
-          "notes": "tests目录由QA负责写入，三个开发者分别负责入口、商品目录和购物车逻辑"
+          "notes": "The tests directory is written by QA; three Developers own the entry point, product catalog, and cart logic respectively."
         }
 
     def _mock_code(self, file_path: str) -> str:

@@ -11,12 +11,14 @@ from core.repo_manager import RepoManager
 from core.brief_manager import BriefManager
 from core.schemas import validate_sds
 from utils.sds_parser import parse_sds
+from utils.sds_normalizer import normalize_sds_candidate
 from utils.allowed_files import flatten_repo_structure
 from utils.event_bus_async import AsyncEventBus
 from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime_async import PythonRuntimeAsync
 from utils.logger import get_logger, StageTimer
 from orchestrator.scheduler import DependencyScheduler
+from orchestrator.architect_diversity import build_architect_profiles, update_claimed_summary
 
 class MultiAgentCodegenWorkflowAsync:
     def __init__(self, ctx):
@@ -31,31 +33,58 @@ class MultiAgentCodegenWorkflowAsync:
 
     async def _collect_sds(self, question: str) -> List[Dict[str, Any]]:
         rag_client = self._rag_client()
-        archs = [ArchitectAgent(name=f"Architect-{i+1}", llm=self.ctx.llm, rag=rag_client) for i in range(self.ctx.cfg.architects)]
-        async def one(a):
+        profiles = build_architect_profiles(self.ctx.cfg.architects, seed=getattr(self.ctx.cfg, "architect_seed", None))
+        sds_list: List[Dict[str, Any]] = []
+        traces: List[Dict[str, Any]] = []
+
+        async def one(a, profile, claimed_summary):
             for _ in range(self.ctx.cfg.sds_retry + 1):
                 try:
-                    sds_json = await a.propose_sds(question)
+                    trace = await a.propose_sds(
+                        question,
+                        design_preference=profile.preference,
+                        claimed_summary=claimed_summary,
+                        return_trace=True,
+                    )
+                    sds_json = normalize_sds_candidate(trace["sds"])
                     validate_sds(sds_json)
-                    return sds_json
+                    trace["sds"] = sds_json
+                    return trace
                 except Exception:
                     continue
             raise RuntimeError("SDS generation failed")
-        results = await asyncio.gather(*[one(a) for a in archs], return_exceptions=True)
-        sds_list = [r for r in results if not isinstance(r, Exception)]
+
+        for profile in profiles:
+            claimed_summary = update_claimed_summary(sds_list)
+            arch = ArchitectAgent(name=profile.name, llm=self.ctx.llm, rag=rag_client)
+            result = await one(arch, profile, claimed_summary)
+            sds_list.append(result["sds"])
+            traces.append(
+                {
+                    "architect": profile.name,
+                    "design_preference": profile.preference,
+                    "claimed_summary": claimed_summary,
+                    "rag_docs": result.get("rag_docs", []),
+                    "sds": result["sds"],
+                }
+            )
+
         if not sds_list:
             raise RuntimeError("No valid SDS generated")
+        self._artifact_json("planning/architect_candidates.json", traces)
         self.log.info(f"SDS collected: {len(sds_list)}")
         return sds_list
 
     async def run(self, question: str) -> str:
         self._check_resource_limits()
+        self._artifact_text("requirements/normalized_requirements.md", question)
         with StageTimer(self.log, "architect_phase"):
             sds_list = await self._collect_sds(question)
         self._check_resource_limits()
         with StageTimer(self.log, "cto_selection"):
             cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
             decision = await cto.choose(question, sds_list)
+            self._artifact_json("planning/cto_decision.json", decision)
             chosen_sds = build_runtime_sds_json(
                 decision["chosen_sds"],
                 dynamic_enabled=self.ctx.cfg.developer_allocation.dynamic_enabled,
@@ -63,6 +92,7 @@ class MultiAgentCodegenWorkflowAsync:
                 assignment_seed=self.ctx.cfg.developer_allocation.assignment_seed,
             )
             sds = parse_sds(chosen_sds)
+            self._artifact_json("planning/chosen_sds.json", chosen_sds)
         self._check_resource_limits()
 
         allowed_all: Set[str] = set(flatten_repo_structure(chosen_sds["repo_structure"]))
@@ -80,6 +110,7 @@ class MultiAgentCodegenWorkflowAsync:
             git_enabled=self.ctx.cfg.git.enabled,
         )
         repo.init_structure(sds.repo_structure)
+        self._artifact_json("repository/repo_root.json", {"repo_root": repo_root})
         brief_mgr = BriefManager()
         bus = AsyncEventBus()
 
@@ -104,16 +135,17 @@ class MultiAgentCodegenWorkflowAsync:
 
         scheduler = DependencyScheduler(sds)
 
-        # 首轮实现
+        # Initial implementation round.
         with StageTimer(self.log, "dev_round_initial"):
             await self._run_scheduled_dev_tasks(bus, scheduler)
         self._check_resource_limits()
 
-        # 修复迭代
+        # Fix iterations.
         with StageTimer(self.log, "qa_and_fix_loops"):
             for rnd in range(self.ctx.cfg.max_rounds):
                 self._check_resource_limits()
                 result = await qa.run_and_feedback()
+                self._artifact_json(f"qa/round_{rnd}.json", result)
                 if result.get("success", False):
                     self.log.info(f"all tests passed at round {rnd}")
                     break
@@ -125,14 +157,25 @@ class MultiAgentCodegenWorkflowAsync:
                 await self._run_scheduled_dev_tasks(bus, scheduler, payloads=fix_payloads)
                 self._check_resource_limits()
 
-        # 停止协程
+        # Stop worker coroutines.
         for a in sds.dev_plan:
             await bus.emit(f"dev_task:{a.developer_id}", {"type":"exit"})
         await asyncio.gather(*dev_tasks, return_exceptions=True)
         finalize_repo = getattr(repo, "finalize_output_repository", None)
         if finalize_repo:
             finalize_repo()
+        self._artifact_json("repository/final.json", {"repo_root": str(repo.root)})
         return str(repo.root)
+
+    def _artifact_json(self, path: str, payload: Any) -> None:
+        artifacts = getattr(self.ctx, "artifacts", None)
+        if artifacts:
+            artifacts.write_json(path, payload)
+
+    def _artifact_text(self, path: str, text: str) -> None:
+        artifacts = getattr(self.ctx, "artifacts", None)
+        if artifacts:
+            artifacts.write_text(path, text)
 
     def _check_resource_limits(self) -> None:
         max_wall = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)

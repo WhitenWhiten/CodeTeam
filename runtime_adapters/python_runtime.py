@@ -33,7 +33,7 @@ class PythonRuntime:
         return normalized.startswith("tests/") or normalized.startswith(".codeteam_qa/tests/")
 
     def run_tests(self, repo_root: str, run_command: str) -> Dict[str, Any]:
-        # 进入仓库目录执行pytest
+        # Run pytest from the repository directory.
         cwd = Path(repo_root)
         if "pytest" in run_command and not self._can_run_pytest():
             return run_pytest_style_tests(str(cwd), self._pytest_tests_dir(run_command))

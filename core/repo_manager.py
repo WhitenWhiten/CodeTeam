@@ -28,30 +28,30 @@ class RepoManager:
             yield
 
     def _relpath(self, path: str) -> str:
-        # 标准化为仓库根的相对路径
+        # Normalize to a path relative to the repository root.
         rel = os.path.relpath(path, self.root) if os.path.isabs(path) else path
         return rel.replace("\\", "/")
 
     def _assert_allowed(self, rel_path: str, agent_id: Optional[str] = None):
         norm = rel_path.replace("\\", "/")
 
-        # 全局权限（来自 SDS 的 repo_structure 展开）
+        # Global permissions expanded from SDS repo_structure.
         if norm in self.allowed_files_all:
             return
 
-        # agent 精确文件权限
+        # Per-agent exact file permissions.
         if agent_id:
             agent_set = self.allowed_files_by_agent.get(agent_id, set())
             if norm in agent_set:
                 return
 
-        # QA 允许写入 tests/ 目录下的任意文件（无需在 SDS 中逐个声明）
+        # QA may write any file under tests/ without each file being declared in the SDS.
         if agent_id == "QA" and (norm == "tests" or norm.startswith("tests/")):
             return
 
         raise PermissionError(f"Write denied: {norm} not declared in SDS repo_structure")
 
-    # 读/写 API（带权限检查用于写）
+    # Read/write API; writes are permission-checked.
     def write_file(self, path: str, content: str, agent_id: Optional[str] = None):
         rel = self._relpath(path)
         self._assert_allowed(rel, agent_id)
@@ -76,7 +76,7 @@ class RepoManager:
         with open(abspath, "w", encoding="utf-8") as f:
             json.dump(obj, f, ensure_ascii=False, indent=2)
 
-    # 读与存在性判断（无权限限制）
+    # Reads and existence checks are unrestricted.
     def exists(self, path: str) -> bool:
         rel = self._relpath(path)
         abspath = os.path.join(self.root, rel)
@@ -110,7 +110,7 @@ class RepoManager:
         with open(abspath, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    # Git 支持
+    # Git support.
     def _is_git_repo(self) -> bool:
         if not self.git_enabled:
             return False
@@ -263,7 +263,7 @@ class RepoManager:
         if not self._is_git_repo():
             self._git("init")
 
-        # 设置本地身份（若未设置）
+        # Set local identity if it is not already configured.
         try:
             self._git("config", "user.name")
         except subprocess.CalledProcessError:
@@ -310,18 +310,18 @@ class RepoManager:
         except subprocess.CalledProcessError:
             return None
 
-    # 初始化结构（支持 list/dict/RepoNode-like）
+    # Initialize structure from list/dict/RepoNode-like inputs.
     def init_structure(self, structure: Any):
         """
-        初始化仓库目录与文件结构，不进行权限校验。
-        支持以下形态：
-          1) 序列（list/tuple/set）：元素可为
-             - 字符串相对路径（'src/app.py' 或 'tests/'）
-             - RepoNode 风格对象（具有 name/path、children/type/is_dir、content 等属性）
-             - 字典（参见 2）
-          2) 字典树：{ "src": {"app.py": None, "pkg": {"__init__.py": None}}, "tests": {} }
-             叶子键（值为 None 或字符串）视为文件；字符串值将作为文件初始内容。
-          3) 单个 RepoNode 风格对象，作为根节点。
+        Initialize repository directories and files without permission checks.
+        Supported shapes:
+          1) Sequence (list/tuple/set), where each item may be:
+             - A relative path string ('src/app.py' or 'tests/')
+             - A RepoNode-like object with attributes such as name/path, children/type/is_dir/content
+             - A dictionary; see shape 2
+          2) A dictionary tree: { "src": {"app.py": None, "pkg": {"__init__.py": None}}, "tests": {} }
+             Leaf keys whose values are None or strings are treated as files; string values become initial content.
+          3) A single RepoNode-like object used as the root node.
         """
         os.makedirs(self.root, exist_ok=True)
 
@@ -339,12 +339,12 @@ class RepoManager:
             return default
 
         def _looks_like_reponode(obj: Any) -> bool:
-            # 粗略判定：具备 name/path 或 children/is_dir/type 等属性
+            # Rough detection by common RepoNode attributes.
             return any(hasattr(obj, a) for a in ("name", "path", "children", "is_dir", "type", "node_type"))
 
         def _init_from_iter(items: Iterable[Any]):
             for item in items:
-                # 字符串路径
+                # String path.
                 if isinstance(item, str):
                     p_norm = item.replace("\\", "/")
                     abs_path = os.path.join(self.root, p_norm)
@@ -358,12 +358,12 @@ class RepoManager:
                         os.makedirs(abs_path, exist_ok=True)
                     continue
 
-                # 字典树节点
+                # Dictionary tree node.
                 if isinstance(item, dict):
                     _init_from_tree(self.root, item)
                     continue
 
-                # RepoNode 风格对象
+                # RepoNode-like object.
                 if _looks_like_reponode(item):
                     _init_from_reponode(item, self.root)
                     continue
@@ -378,19 +378,19 @@ class RepoManager:
                         os.makedirs(child_abs, exist_ok=True)
                         _init_from_tree(child_abs, child)
                     else:
-                        # child 为 None/字符串/其它，可视为文件；字符串为初始内容
+                        # None/string/other child values are files; strings are initial content.
                         _touch_file(child_abs, child if isinstance(child, str) else None)
             else:
                 raise TypeError("repo_structure dict must map names to dict (dir) or None/str (file content)")
 
         def _init_children_for_dir(dir_abs: str, children: Any):
-            # children 可为 list/tuple/set 或 dict
+            # children may be a list/tuple/set or a dict.
             if children is None:
                 return
             if isinstance(children, (list, tuple, set)):
                 for ch in children:
                     if isinstance(ch, str):
-                        # 相对于 dir_abs 的子路径
+                        # Child path relative to dir_abs.
                         p_norm = ch.replace("\\", "/")
                         abs_path = os.path.join(dir_abs, p_norm)
                         if p_norm.endswith("/"):
@@ -402,7 +402,7 @@ class RepoManager:
                             else:
                                 os.makedirs(abs_path, exist_ok=True)
                     elif isinstance(ch, dict):
-                        # 将该 dict 视为子树，挂到当前目录
+                        # Treat this dict as a subtree attached to the current directory.
                         _init_from_tree(dir_abs, ch)
                     elif _looks_like_reponode(ch):
                         _init_from_reponode(ch, dir_abs)
@@ -414,11 +414,11 @@ class RepoManager:
                 raise TypeError(f"Unsupported children container type: {type(children)}")
 
         def _init_from_reponode(node: Any, parent_abs: str):
-            # 解析路径/名称
+            # Resolve path/name.
             path_attr = _get(node, ["path", "relpath", "relative_path"], None)
             name_attr = _get(node, ["name", "basename"], None)
 
-            # 计算绝对路径：优先使用 name 连接到父目录；若无 name 则使用 path 相对 root
+            # Compute absolute path: prefer name joined to the parent; otherwise use path relative to root.
             if name_attr:
                 abs_path = os.path.join(parent_abs, str(name_attr))
             elif isinstance(path_attr, str) and path_attr:
@@ -427,7 +427,7 @@ class RepoManager:
             else:
                 raise ValueError("RepoNode must have either 'name' or 'path'")
 
-            # 判定目录/文件
+            # Determine directory or file.
             is_dir = _get(node, ["is_dir"], None)
             if is_dir is None:
                 node_type = _get(node, ["type", "node_type", "kind"], None)
@@ -438,7 +438,7 @@ class RepoManager:
                     elif lt in ("file",):
                         is_dir = False
                 if is_dir is None:
-                    # 通过是否有 children 兜底判定
+                    # Fall back to detecting whether children exist.
                     is_dir = _get(node, ["children", "nodes", "items", "entries"], None) is not None
 
             if is_dir:
@@ -449,7 +449,7 @@ class RepoManager:
                 content = _get(node, ["content", "text", "initial_content", "body"], None)
                 _touch_file(abs_path, content if isinstance(content, (str, bytes)) else None)
 
-        # 入口分派
+        # Entry dispatch.
         if isinstance(structure, (list, tuple, set)):
             _init_from_iter(structure)
         elif isinstance(structure, dict):
@@ -559,10 +559,10 @@ class RepoManager:
         author_email: Optional[str] = None,
     ) -> Optional[str]:
         """
-        仅提交单个文件的改动。
-        - update_record：可选，用于从其中提取 change_type 放入提交信息。
-        - 返回提交的 commit hash；若系统不存在 git 或无改动则返回 None。
-        - 跳过空提交并避免抛出异常。
+        Commit changes for a single file only.
+        - update_record: optional record used to extract change_type into the commit message.
+        - Returns the commit hash; returns None when git is unavailable or there are no changes.
+        - Skips empty commits and avoids raising for them.
         """
         if not self.git_enabled:
             return None
@@ -572,16 +572,16 @@ class RepoManager:
         rel = self._relpath(path)
         self._ensure_git(author_name, author_email)
 
-        # 构造提交信息
+        # Build the commit message.
         msg = self._build_commit_message(rel, update_record, agent_id, message)
 
-        # 仅暂存该文件；如果文件不存在或不可暂存，直接返回 None
+        # Stage only this file; if it does not exist or cannot be staged, return None.
         try:
             self._git("add", rel)
         except subprocess.CalledProcessError:
             return None
 
-        # 检查该文件是否有暂存更改，避免误读其他 worker 的 staged 文件。
+        # Check this file for staged changes to avoid reading other workers' staged files.
         diff = self._git("diff", "--cached", "--name-only", "--", rel, check=False)
         if not (diff.stdout or "").strip():
             return None
@@ -594,7 +594,7 @@ class RepoManager:
             env["GIT_AUTHOR_EMAIL"] = author_email
             env["GIT_COMMITTER_EMAIL"] = author_email
 
-        # 执行提交：不使用 check=True，避免抛异常；提交失败则返回 None
+        # Commit without check=True; return None if the commit fails.
         ret = subprocess.run(
             ["git", "commit", "-m", msg, "--no-verify", "--only", "--", rel],
             cwd=self.root,
@@ -604,10 +604,10 @@ class RepoManager:
             env=env,
         )
         if ret.returncode != 0:
-            # 常见原因：空提交或钩子失败（已 --no-verify），此处直接返回 None
+            # Common causes: empty commit or hook failure despite --no-verify.
             return None
 
-        # 返回当前 HEAD
+        # Return current HEAD.
         res = self._git("rev-parse", "HEAD", check=False)
         commit_hash = res.stdout.strip() if res.returncode == 0 else None
         if commit_hash and agent_id:

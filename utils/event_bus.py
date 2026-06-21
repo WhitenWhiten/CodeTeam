@@ -20,14 +20,14 @@ class EventBus:
     def emit(self, topic: str, payload: Any):
         q = self._get_q(topic)
         q.put(payload)
-        # 计数类事件（用于barrier）
+        # Counted events used by barriers.
         if topic not in ("dev_done",):
             return
         with self._lock:
             self._counters[topic] = self._counters.get(topic, 0) + 1
             if topic not in self._counter_events:
                 self._counter_events[topic] = Event()
-            # 触发者不在这里set，等待wait_for_count来控制
+            # The emitter does not set the event; wait_for_count controls the barrier.
 
     def take(self, topic: str, timeout: float = None) -> Any:
         q = self._get_q(topic)
@@ -41,13 +41,13 @@ class EventBus:
             self._counter_events[topic].clear()
 
     def wait_for_count(self, topic: str, expected: int, timeout: float = None) -> bool:
-        # 简化：轮询等待计数达到expected
+        # Simplified polling wait until the count reaches expected.
         self.reset_counter(topic)
-        # 由于emit不会阻塞，这里用轮询队列消耗
+        # emit is non-blocking, so consume the queue while polling.
         count = 0
         while count < expected:
             try:
-                _ = self.take(topic, timeout=timeout)  # 消耗一个事件
+                _ = self.take(topic, timeout=timeout)  # Consume one event.
                 count += 1
             except Empty:
                 return False

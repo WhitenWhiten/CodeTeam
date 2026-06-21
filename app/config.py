@@ -10,6 +10,8 @@ class RAGConfig(BaseModel):
     index_dir: str = "./rag"
     top_k: int = 5
     corpus_file: Optional[str] = None
+    distinct_sources: bool = True
+    similarity_threshold: float = 0.92
 
 
 class LLMConfig(BaseModel):
@@ -33,15 +35,18 @@ class DeveloperAllocationConfig(BaseModel):
 
 class SystemConfig(BaseModel):
     architects: int = 4
+    architect_seed: Optional[int] = None
     sds_retry: int = 1
     max_rounds: int = 2
     max_wall_clock_seconds: Optional[int] = None
     max_token_budget: Optional[int] = None
     workspace: str = "./workspace"
     allow_languages: List[str] = ["python"]
-    user_question: str = "生成一个简化版 online shop 程序，包含商品浏览、加入购物车和结算总价三个核心能力"
+    user_question: str = "Build a simplified online shop program with catalog browsing, adding items to a cart, and calculating the checkout total."
     requirements_file: Optional[str] = None
     preprocess_requirements: bool = True
+    artifacts_enabled: bool = True
+    artifacts_dir: Optional[str] = None
     async_mode: bool = True
     llm: LLMConfig = LLMConfig()
     rag: RAGConfig = RAGConfig()
@@ -54,7 +59,7 @@ def _parse_bool(value: str) -> bool:
 
 
 def load_config(path: str = None) -> SystemConfig:
-    # 简化：使用默认配置，并支持少量环境变量覆盖
+    # Use default configuration and support selected environment overrides.
     cfg = SystemConfig()
 
     provider = os.getenv("CODETEAM_LLM_PROVIDER")
@@ -93,6 +98,10 @@ def load_config(path: str = None) -> SystemConfig:
     if architects:
         cfg.architects = max(1, int(architects))
 
+    architect_seed = os.getenv("CODETEAM_ARCHITECT_SEED")
+    if architect_seed:
+        cfg.architect_seed = int(architect_seed)
+
     max_rounds = os.getenv("CODETEAM_MAX_QA_ROUNDS")
     if max_rounds:
         cfg.max_rounds = max(0, int(max_rounds))
@@ -120,6 +129,22 @@ def load_config(path: str = None) -> SystemConfig:
     rag_top_k = os.getenv("CODETEAM_RAG_TOP_K")
     if rag_top_k:
         cfg.rag.top_k = max(1, int(rag_top_k))
+
+    rag_distinct_sources = os.getenv("CODETEAM_RAG_DISTINCT_SOURCES")
+    if rag_distinct_sources is not None:
+        cfg.rag.distinct_sources = _parse_bool(rag_distinct_sources)
+
+    rag_similarity_threshold = os.getenv("CODETEAM_RAG_SIMILARITY_THRESHOLD")
+    if rag_similarity_threshold:
+        cfg.rag.similarity_threshold = float(rag_similarity_threshold)
+
+    artifacts_enabled = os.getenv("CODETEAM_ARTIFACTS_ENABLED")
+    if artifacts_enabled is not None:
+        cfg.artifacts_enabled = _parse_bool(artifacts_enabled)
+
+    artifacts_dir = os.getenv("CODETEAM_ARTIFACTS_DIR")
+    if artifacts_dir:
+        cfg.artifacts_dir = artifacts_dir
 
     git_enabled = os.getenv("CODETEAM_GIT_COLLAB_ENABLED")
     if git_enabled is not None:

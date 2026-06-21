@@ -148,19 +148,19 @@ class PromptAlignmentTests(unittest.TestCase):
         prompt_text = prompt_path.read_text(encoding="utf-8")
 
         for content in (prompt_text, ARCHITECT_PROMPT_FALLBACK):
-            self.assertNotIn("tests/test_main.py 与 tests/test_utils.py", content)
-            self.assertNotIn("必须包含 tests/test_main.py", content)
-            self.assertIn("不要硬编码 `tests/test_main.py` 或 `tests/test_utils.py`", content)
-            self.assertIn("必须包含业务源码目录与 `tests/` 目录", content)
+            self.assertNotIn("tests/test_main.py and tests/test_utils.py are required", content)
+            self.assertNotIn("must include tests/test_main.py", content)
+            self.assertIn("do not hardcode `tests/test_main.py` or `tests/test_utils.py`", content)
+            self.assertIn("business source directories and a `tests/` directory", content)
 
     def test_cto_prompt_matches_current_execution_constraints(self):
         prompt_path = Path(__file__).resolve().parents[1] / "prompts" / "cto_prompt.md"
         prompt_text = prompt_path.read_text(encoding="utf-8")
 
         for content in (prompt_text, CTO_PROMPT_FALLBACK):
-            self.assertIn("当前 PoC 仅支持 `python + pytest`", content)
-            self.assertIn("测试结构是否围绕业务模块、关键流程和边界条件组织", content)
-            self.assertNotIn("若所选技术栈非python，请改选最优的python方案。", content)
+            self.assertIn("The current PoC supports only `python + pytest`", content)
+            self.assertIn("business modules, key flows, and boundary conditions", content)
+            self.assertNotIn("If the selected tech stack is not python", content)
 
     def test_qa_prompt_uses_behavior_based_test_naming(self):
         prompt_path = Path(__file__).resolve().parents[1] / "prompts" / "qa_prompt.md"
@@ -168,7 +168,7 @@ class PromptAlignmentTests(unittest.TestCase):
 
         for content in (prompt_text, QA_PROMPT_FALLBACK):
             self.assertIn("tests/test_checkout.py", content)
-            self.assertIn("不要硬编码 `tests/test_main.py`、`tests/test_utils.py`", content)
+            self.assertIn("Do not hardcode templated names such as `tests/test_main.py` or `tests/test_utils.py`", content)
             self.assertIn("\"setup_commands\": []", content)
 
     def test_cto_and_qa_prompt_templates_render_without_format_errors(self):
@@ -202,13 +202,13 @@ class PromptAlignmentTests(unittest.TestCase):
 
         for content in (prompt_text, DEV_PROMPT_FALLBACK):
             self.assertIn("# FILE_PATH: {file_path}", content)
-            self.assertIn("只输出目标文件的完整源码", content)
-            self.assertIn("目标文件路径固定为 `{file_path}`", content)
+            self.assertIn("Output only the complete source code for the target file", content)
+            self.assertIn("The target file path is fixed as `{file_path}`", content)
 
         prompt = GenerateCodeAction()._build_prompt(
             file_spec={
                 "path": "shop/cart.py",
-                "responsibilities": "根据商品名称和价格查找器计算购物车总价",
+                "responsibilities": "Calculate the cart total from product names and a price lookup function",
                 "interfaces": {
                     "functions": [
                         {
@@ -225,7 +225,7 @@ class PromptAlignmentTests(unittest.TestCase):
         )
 
         self.assertIn("# FILE_PATH: shop/cart.py", prompt)
-        self.assertIn("根据商品名称和价格查找器计算购物车总价", prompt)
+        self.assertIn("Calculate the cart total from product names and a price lookup function", prompt)
         self.assertIn("def calculate_total(item_names: list[str], price_lookup: callable) -> float:", prompt)
         self.assertIn("AssertionError in tests/test_checkout.py", prompt)
 

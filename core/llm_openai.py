@@ -67,7 +67,7 @@ class OpenAILLM:
         return ""
 
     async def structured_json(self, prompt: str, schema: str | Dict[str, Any] | None = None, max_retries: int = 3) -> Dict[str, Any]:
-        # 使用 response_format 强制 JSON，再做 schema 校验与纠错
+        # Use response_format to force JSON, then validate and repair against the schema.
         schema_dict = None
         named_validator = None
         if isinstance(schema, dict):
@@ -95,7 +95,7 @@ class OpenAILLM:
             if parsed is not None:
                 return parsed
 
-        # 纠错重试
+        # Repair retries.
         last_msg = content
         for i in range(max_retries):
             repair_prompt = self._build_repair_prompt(last_msg, schema_dict)
@@ -112,12 +112,12 @@ class OpenAILLM:
         raise ValueError("Failed to produce valid structured JSON after retries")
 
     async def files(self, prompt: str, max_retries: int = 3) -> Dict[str, str]:
-        # 期望模型返回 {"path":"content", ...}
+        # Expect the model to return {"path": "content", ...}.
         content = await self._gen_json_once(prompt)
         parsed = self._safe_parse_json(content)
         if isinstance(parsed, dict) and all(isinstance(k,str) and isinstance(v,str) for k,v in parsed.items()):
             return parsed
-        # 尝试修复
+        # Try repair.
         for i in range(max_retries):
             repair_prompt = f"Please return ONLY a valid JSON object mapping file paths to string contents. Example: {{\"tests/test_x.py\":\"content\"}}. Your previous content:\n{content}"
             content = await self._gen_json_once(repair_prompt)
@@ -144,9 +144,9 @@ class OpenAILLM:
     def _safe_parse_json(self, text: str) -> Optional[Dict[str, Any]]:
         if not text:
             return None
-        # 提取最外层JSON对象
+        # Extract the outermost JSON object.
         if not text.strip().startswith("{"):
-            # 尝试从文本中截取第一个 { 到最后一个 }
+            # Try slicing from the first { to the last }.
             m1 = text.find("{")
             m2 = text.rfind("}")
             if m1 != -1 and m2 != -1 and m2 > m1:

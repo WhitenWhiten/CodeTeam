@@ -9,6 +9,7 @@ class Context:
     cfg: any
     llm: any
     rag: any = None
+    artifacts: any = None
 
     def make_repo_root(self) -> str:
         ts = time.strftime("%Y%m%d-%H%M%S")

@@ -16,7 +16,7 @@ def _format_args(args: ast.arguments) -> str:
     kw = [fmt(a) for a in args.kwonlyargs]
     if args.kwarg:
         kw.append("**" + args.kwarg.arg)
-    defaults = []  # 简化：不展开默认值
+    defaults = []  # Simplified: do not expand default values.
     args_sig = ", ".join(pos + kw)
     return args_sig
 
