@@ -75,6 +75,10 @@ def load_config(path: str = None) -> SystemConfig:
     if model:
         cfg.llm.model = model
 
+    base_url = os.getenv("CODETEAM_LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    if base_url:
+        cfg.llm.base_url = base_url
+
     top_p = os.getenv("CODETEAM_LLM_TOP_P")
     if top_p:
         cfg.llm.top_p = float(top_p)

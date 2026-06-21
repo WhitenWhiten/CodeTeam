@@ -67,6 +67,17 @@ On platforms where `faiss-cpu` is not available from pip, install FAISS from you
 Set up the required model, runtime, and workflow-related configurations according to your local environment.
 If your project uses retrieval, make sure the retrieval corpus and related paths are configured properly before running the pipeline.
 
+For OpenAI-compatible providers, configure the provider, model, compatible endpoint, and API key through environment variables:
+
+```bash
+export CODETEAM_LLM_PROVIDER=openai
+export CODETEAM_LLM_MODEL=<model-name>
+export CODETEAM_LLM_BASE_URL=<compatible-api-base-url>
+export OPENAI_API_KEY=<api-key>
+```
+
+`OPENAI_BASE_URL` is also accepted as a fallback when `CODETEAM_LLM_BASE_URL` is not set.
+
 ### 4. Run CodeTeam
 
 Use the module entrypoint from the repository root to start a repository-generation run:

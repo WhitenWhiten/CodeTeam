@@ -287,6 +287,34 @@ class ConfigAndFeatureToggleTests(unittest.TestCase):
         self.assertEqual(cfg.llm.max_tokens, 8192)
         self.assertTrue(cfg.preprocess_requirements)
 
+    def test_load_config_parses_openai_compatible_endpoint(self):
+        with patch.dict(
+            os.environ,
+            {
+                "CODETEAM_LLM_PROVIDER": "openai",
+                "CODETEAM_LLM_MODEL": "deepseek-v4-flash",
+                "CODETEAM_LLM_BASE_URL": "https://api.deepseek.com",
+            },
+            clear=False,
+        ):
+            cfg = load_config()
+
+        self.assertEqual(cfg.llm.provider, "openai")
+        self.assertEqual(cfg.llm.model, "deepseek-v4-flash")
+        self.assertEqual(cfg.llm.base_url, "https://api.deepseek.com")
+
+    def test_load_config_accepts_openai_base_url_alias(self):
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_BASE_URL": "https://compatible.example.com/v1",
+            },
+            clear=False,
+        ):
+            cfg = load_config()
+
+        self.assertEqual(cfg.llm.base_url, "https://compatible.example.com/v1")
+
     def test_load_config_parses_feature_flags_and_rag_off_disables_bootstrap_rag(self):
         with patch.dict(
             os.environ,
