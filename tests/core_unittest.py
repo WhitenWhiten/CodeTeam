@@ -45,7 +45,7 @@ class RAGClientTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            cfg = SimpleNamespace(top_k=3, corpus_file=str(corpus_path))
+            cfg = SimpleNamespace(top_k=3, corpus_file=str(corpus_path), index_backend="lexical")
             client = RAGClient(cfg)
 
             results = client.query("fastapi shop checkout")
@@ -257,6 +257,10 @@ class ConfigAndFeatureToggleTests(unittest.TestCase):
 
         self.assertEqual(cfg.architects, 4)
         self.assertEqual(cfg.rag.top_k, 5)
+        self.assertEqual(cfg.rag.embedding_model, "BAAI/bge-m3")
+        self.assertEqual(cfg.rag.index_backend, "faiss_hnsw")
+        self.assertEqual(cfg.rag.chunk_tokens, 768)
+        self.assertEqual(cfg.rag.chunk_overlap, 128)
         self.assertEqual(cfg.llm.model, "Qwen2.5-72B-Instruct")
         self.assertEqual(cfg.llm.top_p, 0.95)
         self.assertEqual(cfg.llm.max_tokens, 8192)

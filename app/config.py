@@ -12,6 +12,11 @@ class RAGConfig(BaseModel):
     corpus_file: Optional[str] = None
     distinct_sources: bool = True
     similarity_threshold: float = 0.92
+    embedding_model: str = "BAAI/bge-m3"
+    index_backend: str = "faiss_hnsw"  # faiss_hnsw|lexical
+    fallback_mode: str = "lexical"
+    chunk_tokens: int = 768
+    chunk_overlap: int = 128
 
 
 class LLMConfig(BaseModel):
@@ -137,6 +142,26 @@ def load_config(path: str = None) -> SystemConfig:
     rag_similarity_threshold = os.getenv("CODETEAM_RAG_SIMILARITY_THRESHOLD")
     if rag_similarity_threshold:
         cfg.rag.similarity_threshold = float(rag_similarity_threshold)
+
+    rag_embedding_model = os.getenv("CODETEAM_RAG_EMBEDDING_MODEL")
+    if rag_embedding_model:
+        cfg.rag.embedding_model = rag_embedding_model
+
+    rag_backend = os.getenv("CODETEAM_RAG_BACKEND")
+    if rag_backend:
+        cfg.rag.index_backend = rag_backend
+
+    rag_fallback = os.getenv("CODETEAM_RAG_FALLBACK_MODE")
+    if rag_fallback:
+        cfg.rag.fallback_mode = rag_fallback
+
+    rag_chunk_tokens = os.getenv("CODETEAM_RAG_CHUNK_TOKENS")
+    if rag_chunk_tokens:
+        cfg.rag.chunk_tokens = max(1, int(rag_chunk_tokens))
+
+    rag_chunk_overlap = os.getenv("CODETEAM_RAG_CHUNK_OVERLAP")
+    if rag_chunk_overlap:
+        cfg.rag.chunk_overlap = max(0, int(rag_chunk_overlap))
 
     artifacts_enabled = os.getenv("CODETEAM_ARTIFACTS_ENABLED")
     if artifacts_enabled is not None:

@@ -1,6 +1,7 @@
 # actions/run_tests.py
 from __future__ import annotations
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, Mapping
 try:
@@ -77,16 +78,62 @@ class RunTestsAction(Action):
             next_parts.append(temp_rel)
         return " ".join(next_parts)
 
-    def _record_setup_commands(self, setup_commands: list[str] | None) -> list[Dict[str, str]]:
+    def _is_allowed_setup_command(self, command: str) -> bool:
+        normalized = " ".join((command or "").strip().split()).lower()
+        allowed_prefixes = (
+            "pip --version",
+            "pip install ",
+            "python -m pip --version",
+            "python -m pip install ",
+            "python3 -m pip install ",
+            "pytest ",
+            "python -m pytest ",
+        )
+        return any(normalized.startswith(prefix) for prefix in allowed_prefixes)
+
+    def _run_setup_commands(self, repo_root: Path, setup_commands: list[str] | None) -> list[Dict[str, str]]:
         records = []
         for command in setup_commands or []:
-            records.append(
-                {
-                    "command": command,
-                    "status": "skipped",
-                    "reason": "setup_commands are recorded but not executed by this minimal QA runtime",
-                }
-            )
+            if not self._is_allowed_setup_command(command):
+                records.append(
+                    {
+                        "command": command,
+                        "status": "blocked",
+                        "returncode": None,
+                        "output": "",
+                        "reason": "setup command is outside the allowed install/test command set",
+                    }
+                )
+                continue
+            try:
+                proc = subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=repo_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=600,
+                )
+                records.append(
+                    {
+                        "command": command,
+                        "status": "success" if proc.returncode == 0 else "failed",
+                        "returncode": proc.returncode,
+                        "output": (proc.stdout + "\n" + proc.stderr).strip(),
+                        "reason": "",
+                    }
+                )
+            except subprocess.TimeoutExpired as exc:
+                records.append(
+                    {
+                        "command": command,
+                        "status": "failed",
+                        "returncode": None,
+                        "output": f"TIMEOUT: {exc}",
+                        "reason": "setup command timed out",
+                    }
+                )
         return records
 
     async def run(
@@ -99,11 +146,34 @@ class RunTestsAction(Action):
     ):
         root = Path(repo_root)
         qa_root = root / ".codeteam_qa"
-        setup_records = self._record_setup_commands(setup_commands)
+        setup_records = self._run_setup_commands(root, setup_commands)
         original_command = run_command or "pytest -q"
         effective_command = original_command
 
         try:
+            blocking_setup = [record for record in setup_records if record["status"] in {"failed", "blocked"}]
+            if blocking_setup:
+                output = "\n".join(
+                    f"SETUP {record['status']}: {record['command']} {record.get('reason', '')}\n{record.get('output', '')}".strip()
+                    for record in blocking_setup
+                )
+                return {
+                    "success": False,
+                    "output": output,
+                    "failures": [
+                        {
+                            "file_path": "",
+                            "message": "setup command failed",
+                            "stack": output,
+                        }
+                    ],
+                    "setup_commands": setup_records,
+                    "qa_run_command": {
+                        "original": run_command,
+                        "effective": effective_command,
+                    },
+                }
+
             if tests:
                 temp_tests_dir = self._write_temp_tests(root, tests)
                 effective_command = self._point_pytest_at_temp_tests(original_command, temp_tests_dir.relative_to(root))
@@ -122,7 +192,7 @@ class RunTestsAction(Action):
                     (result.get("output") or "")
                     + "\n"
                     + "\n".join(
-                        f"SETUP {record['status']}: {record['command']} ({record['reason']})"
+                        f"SETUP {record['status']}: {record['command']}"
                         for record in setup_records
                     )
                 ).strip()

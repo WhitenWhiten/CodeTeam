@@ -1,5 +1,11 @@
 from __future__ import annotations
 import asyncio
+import sys
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.config import load_config
 from app.bootstrap import bootstrap
 from core.requirements_preprocessor import load_requirements_text, preprocess_requirements

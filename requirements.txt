@@ -2,3 +2,7 @@ pydantic
 openai>=1.0
 jsonschema
 pytest
+numpy
+pandas
+openpyxl
+scipy

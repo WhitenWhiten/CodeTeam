@@ -53,16 +53,32 @@ class QATempTests(unittest.TestCase):
                     run_command="pytest -q",
                     runtime_adapter=PythonRuntime(),
                     tests=tests,
-                    setup_commands=["pip install sample-extra"],
+                    setup_commands=["python -m pip --version"],
                 )
             )
 
             self.assertTrue(result["success"], result["output"])
-            self.assertEqual(result["setup_commands"][0]["status"], "skipped")
-            self.assertIn("SETUP skipped: pip install sample-extra", result["output"])
+            self.assertEqual(result["setup_commands"][0]["status"], "success")
+            self.assertIn("SETUP success: python -m pip --version", result["output"])
             self.assertFalse((root / ".codeteam_qa").exists())
             self.assertFalse((root / "tests" / "test_sample_qa_module.py").exists())
             self.assertIn(".codeteam_qa/tests", result["qa_run_command"]["effective"])
+
+    def test_disallowed_setup_command_blocks_test_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = asyncio.run(
+                RunTestsAction().run(
+                    repo_root=tmp,
+                    run_command="pytest -q",
+                    runtime_adapter=PythonRuntime(),
+                    tests={"tests/test_never_runs.py": "def test_never_runs():\n    assert True\n"},
+                    setup_commands=["echo unsafe"],
+                )
+            )
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["setup_commands"][0]["status"], "blocked")
+            self.assertIn("SETUP blocked: echo unsafe", result["output"])
 
 
 class FailureRoutingDiagnosticsTests(unittest.TestCase):

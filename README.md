@@ -34,7 +34,7 @@ When retrieval is enabled, architects are additionally grounded with design-orie
 - **Planning with Software Design Sketches**: Architect Agents generate SDSs that specify repository structure, interfaces, dependencies, and developer ownership before implementation begins.
 - **Dynamic Developer Allocation**: The framework instantiates a task-specific number of Developer Agents based on the selected design plan instead of relying on a fixed assignment.
 - **Git-Based Coordination**: Developer Agents coordinate through lightweight Git-style updates to propagate interface and dependency changes across files.
-- **Iterative QA Repair Loop**: A QA Agent generates lightweight tests, executes the workspace, summarizes failures, and triggers repair until convergence or budget exhaustion.
+- **Iterative QA Repair Loop**: A QA Agent generates temporary lightweight tests, runs the configured setup and pytest strategy, summarizes failures, and triggers repair until convergence or budget exhaustion.
 - **Optional RAG Grounding**: Retrieval can be enabled to ground architectural planning with design-oriented references from public GitHub repositories.
 
 ## 🚀 Quick Start
@@ -54,6 +54,14 @@ conda activate codeteam
 pip install -r requirements.txt
 ```
 
+For the paper-aligned vector RAG path, install the optional retrieval stack as well:
+
+```bash
+pip install -r requirements-rag.txt
+```
+
+On platforms where `faiss-cpu` is not available from pip, install FAISS from your Python distribution and keep `sentence-transformers` installed. For a lightweight local smoke run without vector dependencies, set `CODETEAM_RAG_BACKEND=lexical`.
+
 ### 3. Prepare configuration
 
 Set up the required model, runtime, and workflow-related configurations according to your local environment.
@@ -61,13 +69,17 @@ If your project uses retrieval, make sure the retrieval corpus and related paths
 
 ### 4. Run CodeTeam
 
-Use the project entry script or application bootstrap to start a repository-generation run:
+Use the module entrypoint from the repository root to start a repository-generation run:
+
+```bash
+python -m app.main
+```
+
+The script path also works for local runs:
 
 ```bash
 python app/main.py
 ```
-
-If your local entrypoint is different, replace the command above with the corresponding startup script used in this repository.
 
 ### 5. Inspect generated repositories
 
@@ -83,7 +95,7 @@ You can then run the generated project, inspect intermediate artifacts, or execu
 
 CodeTeam generates a repository from an empty workspace in three stages: planning, decision making, and implementation. First, the input requirements document is preprocessed from the project README. Then, multiple Architect Agents propose alternative software design sketches (SDSs). Each SDS specifies the repository file tree, key dependencies, public interfaces, cross-file dependencies, and a project-specific developer plan, including how many Developer Agents should be instantiated and which files each developer should own. When retrieval is enabled, the architects are additionally grounded with design-oriented references retrieved from a curated corpus of public GitHub repositories.
 
-After that, a CTO Agent evaluates the candidate SDSs, selects one plan, and normalizes it into an executable contract for the downstream stages. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while a lightweight Git-based coordination mechanism is used to propagate interface changes across agents. Finally, a QA Agent generates lightweight tests, executes the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted.
+After that, a CTO Agent evaluates the candidate SDSs, selects one plan, and normalizes it into an executable contract for the downstream stages. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while a lightweight Git-based coordination mechanism is used to propagate interface changes across agents. Finally, a QA Agent generates temporary lightweight tests, executes the configured setup commands and pytest run strategy inside the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted. The temporary QA tests are removed before the final repository is returned.
 
 In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. The repository includes both prompting-based and supervised fine-tuning (SFT) settings for controlled comparison with prior NL2Repo baselines.
 

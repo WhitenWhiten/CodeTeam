@@ -23,12 +23,9 @@ def bootstrap(cfg):
 
     rag = None
     if cfg.rag.enabled:
-        try:
-            from rag.rag_client import RAGClient
+        from rag.rag_client import RAGClient
 
-            rag = RAGClient(cfg.rag)
-        except Exception:
-            rag = None
+        rag = RAGClient(cfg.rag)
 
     artifacts_dir = cfg.artifacts_dir
     if not artifacts_dir:
