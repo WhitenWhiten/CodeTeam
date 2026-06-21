@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 import numpy as np
+
+LOG = logging.getLogger("rag")
 
 
 def _tokenize(text: str) -> List[str]:
@@ -52,12 +55,24 @@ class RAGClient:
         self._embeddings: np.ndarray | None = None
         self._model = None
 
-        if self._chunks and self.index_backend != "lexical":
+        if self.index_backend == "lexical":
+            LOG.info("RAG backend set to lexical; vector retrieval is disabled")
+        elif self._chunks:
             try:
                 self._prepare_vector_index()
-            except Exception:
+                LOG.info(
+                    "RAG vector backend active: model=%s index=faiss_hnsw chunks=%d",
+                    self.embedding_model,
+                    len(self._chunks),
+                )
+            except Exception as exc:
                 if self.fallback_mode != "lexical":
                     raise
+                LOG.warning(
+                    "RAG vector backend unavailable (%s); falling back to lexical retrieval. "
+                    "Install requirements-rag.txt or set CODETEAM_RAG_BACKEND=lexical to make this explicit.",
+                    exc,
+                )
 
     def query(self, q: str) -> list[dict]:
         if not self._chunks:

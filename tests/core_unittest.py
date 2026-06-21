@@ -24,27 +24,30 @@ from utils.runtime_dev_plan import build_fixed_random_dev_plan, build_runtime_sd
 
 
 class RAGClientTests(unittest.TestCase):
+    def _write_sample_corpus(self, corpus_path: Path) -> None:
+        corpus_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "full_name": "demo/shop-fastapi",
+                        "readme": "FastAPI online shop with cart and checkout support.",
+                        "tree": "[app[main.py, cart.py, catalog.py]]",
+                    },
+                    {
+                        "full_name": "demo/blog",
+                        "readme": "Static blog generator.",
+                        "tree": "[blog[main.py]]",
+                    },
+                ],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
     def test_query_returns_ranked_results_from_local_corpus(self):
         with tempfile.TemporaryDirectory() as tmp:
             corpus_path = Path(tmp) / "corpus.json"
-            corpus_path.write_text(
-                json.dumps(
-                    [
-                        {
-                            "full_name": "demo/shop-fastapi",
-                            "readme": "FastAPI online shop with cart and checkout support.",
-                            "tree": "[app[main.py, cart.py, catalog.py]]",
-                        },
-                        {
-                            "full_name": "demo/blog",
-                            "readme": "Static blog generator.",
-                            "tree": "[blog[main.py]]",
-                        },
-                    ],
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+            self._write_sample_corpus(corpus_path)
             cfg = SimpleNamespace(top_k=3, corpus_file=str(corpus_path), index_backend="lexical")
             client = RAGClient(cfg)
 
@@ -52,6 +55,24 @@ class RAGClientTests(unittest.TestCase):
 
             self.assertTrue(results)
             self.assertEqual(results[0]["meta"]["source"], "demo/shop-fastapi")
+
+    def test_vector_rag_fallback_is_logged_explicitly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus_path = Path(tmp) / "corpus.json"
+            self._write_sample_corpus(corpus_path)
+            cfg = SimpleNamespace(
+                top_k=3,
+                corpus_file=str(corpus_path),
+                index_backend="faiss_hnsw",
+                fallback_mode="lexical",
+            )
+
+            with patch.object(RAGClient, "_prepare_vector_index", side_effect=RuntimeError("missing faiss")):
+                with self.assertLogs("rag", level="WARNING") as logs:
+                    client = RAGClient(cfg)
+
+            self.assertIn("falling back to lexical retrieval", "\n".join(logs.output))
+            self.assertEqual(client.query("fastapi shop checkout")[0]["meta"]["index_backend"], "lexical")
 
 
 class RequirementsPreprocessorTests(unittest.TestCase):

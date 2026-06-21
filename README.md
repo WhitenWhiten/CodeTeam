@@ -97,7 +97,7 @@ CodeTeam generates a repository from an empty workspace in three stages: plannin
 
 After that, a CTO Agent evaluates the candidate SDSs, selects one plan, and normalizes it into an executable contract for the downstream stages. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while a lightweight Git-based coordination mechanism is used to propagate interface changes across agents. Finally, a QA Agent generates temporary lightweight tests, executes the configured setup commands and pytest run strategy inside the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted. The temporary QA tests are removed before the final repository is returned.
 
-In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. The repository includes both prompting-based and supervised fine-tuning (SFT) settings for controlled comparison with prior NL2Repo baselines.
+In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. This repository provides the prompting-based workflow implementation and the paper's PE/SFT result data for statistical reproduction.
 
 ## 📊 Benchmarks
 
@@ -179,7 +179,8 @@ CodeTeam/
 |-- tests/                # Test suite for the repository itself
 |-- utils/                # utilities for events, logging, routing, and SDS parsing
 |-- workspace/            # Generated output repositories from workflow runs
-|-- requirements.txt      # List of python run-time requirements 
+|-- requirements.txt      # List of python run-time requirements
+|-- requirements-rag.txt  # List of RAG run-time requirements 
 \-- README.md			  # Description of this replication package
 ```
 
