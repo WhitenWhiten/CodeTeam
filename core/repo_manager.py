@@ -2,8 +2,11 @@
 from typing import Set, Dict, Optional, Iterable, Any
 import os
 import json
+import re
 import subprocess
 import shutil
+import threading
+from contextlib import contextmanager
 
 class RepoManager:
     def __init__(
@@ -17,6 +20,12 @@ class RepoManager:
         self.allowed_files_all = allowed_files_all
         self.allowed_files_by_agent = allowed_files_by_agent
         self.git_enabled = git_enabled
+        self._collaboration_lock = threading.RLock()
+
+    @contextmanager
+    def collaboration_lock(self):
+        with self._collaboration_lock:
+            yield
 
     def _relpath(self, path: str) -> str:
         # 标准化为仓库根的相对路径
@@ -120,6 +129,130 @@ class RepoManager:
             text=True,
             check=check,
         )
+
+    def _current_branch(self) -> Optional[str]:
+        if not self.git_enabled or shutil.which("git") is None or not self._is_git_repo():
+            return None
+        res = self._git("branch", "--show-current", check=False)
+        branch = (res.stdout or "").strip()
+        return branch or None
+
+    def _agent_branch_name(self, agent_id: Optional[str]) -> str:
+        raw = agent_id or "agent"
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-._")
+        return f"agent/{safe or 'agent'}"
+
+    def _default_branch(self) -> str:
+        return "main"
+
+    def ensure_agent_branch(self, agent_id: Optional[str]) -> Optional[str]:
+        """
+        Ensure a lightweight branch exists for an agent and check it out.
+        Returns the branch name, or None when git collaboration is unavailable.
+        """
+        if not self.git_enabled:
+            return None
+        if shutil.which("git") is None:
+            return None
+
+        self._ensure_git()
+        self.ensure_integration_branch()
+        branch = self._agent_branch_name(agent_id)
+        if self._current_branch() == branch:
+            return branch
+
+        exists = self._git("rev-parse", "--verify", branch, check=False)
+        try:
+            if exists.returncode == 0:
+                ret = self._git("checkout", branch, check=False)
+            else:
+                ret = self._git("checkout", "-b", branch, check=False)
+            return branch if ret.returncode == 0 else None
+        except subprocess.CalledProcessError:
+            return None
+
+    def checkout_agent_branch(self, agent_id: Optional[str]) -> Optional[str]:
+        return self.ensure_agent_branch(agent_id)
+
+    def ensure_integration_branch(self) -> Optional[str]:
+        if not self.git_enabled:
+            return None
+        if shutil.which("git") is None:
+            return None
+
+        self._ensure_git()
+        branch = self._default_branch()
+        current = self._current_branch()
+        if current == branch:
+            return branch
+
+        exists = self._git("rev-parse", "--verify", branch, check=False)
+        if exists.returncode == 0:
+            ret = self._git("checkout", branch, check=False)
+            return branch if ret.returncode == 0 else current
+
+        if current:
+            create = self._git("branch", branch, check=False)
+            if create.returncode == 0:
+                ret = self._git("checkout", branch, check=False)
+                return branch if ret.returncode == 0 else current
+
+        ret = self._git("checkout", "-b", branch, check=False)
+        return branch if ret.returncode == 0 else current
+
+    def integrate_agent_branch(self, agent_id: Optional[str]) -> bool:
+        if not self.git_enabled:
+            return False
+        if shutil.which("git") is None:
+            return False
+        if not self._is_git_repo():
+            return False
+
+        source_branch = self._agent_branch_name(agent_id)
+        source_exists = self._git("rev-parse", "--verify", source_branch, check=False)
+        if source_exists.returncode != 0:
+            return False
+
+        integration = self.ensure_integration_branch()
+        if not integration:
+            return False
+
+        merge = self._git(
+            "merge",
+            "--no-ff",
+            "--no-edit",
+            "-X",
+            "theirs",
+            source_branch,
+            check=False,
+        )
+        return merge.returncode == 0
+
+    def cleanup_runtime_artifacts(self) -> None:
+        root = os.path.abspath(self.root)
+        for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+            base = os.path.basename(dirpath)
+            if base == ".git":
+                dirnames[:] = []
+                continue
+            for filename in filenames:
+                if filename.endswith(".pyc"):
+                    try:
+                        os.remove(os.path.join(dirpath, filename))
+                    except OSError:
+                        pass
+            if base == "__pycache__":
+                try:
+                    shutil.rmtree(dirpath)
+                except OSError:
+                    pass
+
+    def finalize_output_repository(self) -> None:
+        self.cleanup_runtime_artifacts()
+        if not self.git_enabled or shutil.which("git") is None:
+            return
+        self.ensure_integration_branch()
+        self.commit_all("chore: finalize generated repository")
 
     def _ensure_git(self, author_name: Optional[str] = None, author_email: Optional[str] = None):
         if not self.git_enabled:
@@ -325,6 +458,96 @@ class RepoManager:
             _init_from_reponode(structure, self.root)
         else:
             raise TypeError("repo_structure must be a list/tuple/set of paths or a nested dict tree or a RepoNode-like object")
+
+    def _symbol_names(self, symbols: Any) -> list[str]:
+        if not isinstance(symbols, list):
+            return []
+        names = []
+        for item in symbols:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("signature")
+            else:
+                name = getattr(item, "name", None) or getattr(item, "signature", None)
+            if name:
+                names.append(str(name))
+        return names
+
+    def _json_safe(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(k): self._json_safe(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._json_safe(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._json_safe(item) for item in value]
+        if isinstance(value, set):
+            return sorted(self._json_safe(item) for item in value)
+        if hasattr(value, "__dict__"):
+            return self._json_safe(vars(value))
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    def _normalize_update_reason(self, rel_path: str, update_record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        record = dict(update_record or {})
+        change_type = record.get("change_type") or "update"
+        modified_exported_symbols = record.get("modified_exported_symbols")
+        if modified_exported_symbols is None:
+            modified_exported_symbols = []
+            for key in (
+                "functions_added",
+                "functions_modified",
+                "functions_removed",
+                "classes_added",
+                "classes_modified",
+                "classes_removed",
+            ):
+                modified_exported_symbols.extend(self._symbol_names(record.get(key, [])))
+        seen = set()
+        modified_exported_symbols = [
+            s for s in modified_exported_symbols
+            if isinstance(s, str) and s and not (s in seen or seen.add(s))
+        ]
+
+        affected_dependent_files = record.get("affected_dependent_files")
+        if affected_dependent_files is None:
+            affected_dependent_files = record.get("dependent_files_affected", [])
+        if not isinstance(affected_dependent_files, list):
+            affected_dependent_files = []
+
+        compatibility_note = record.get("compatibility_note")
+        if not compatibility_note:
+            compatibility_note = "No compatibility impact recorded."
+
+        normalized = {
+            "target_file": record.get("target_file") or record.get("file_path") or rel_path,
+            "file_path": record.get("file_path") or record.get("target_file") or rel_path,
+            "change_type": change_type,
+            "functions_added": record.get("functions_added", []),
+            "functions_modified": record.get("functions_modified", []),
+            "functions_removed": record.get("functions_removed", []),
+            "classes_added": record.get("classes_added", []),
+            "classes_modified": record.get("classes_modified", []),
+            "classes_removed": record.get("classes_removed", []),
+            "modified_exported_symbols": modified_exported_symbols,
+            "compatibility_note": str(compatibility_note),
+            "affected_dependent_files": affected_dependent_files,
+            "rationale": record.get("rationale", ""),
+            "related_files_brief_used": record.get("related_files_brief_used", []),
+        }
+        return self._json_safe(normalized)
+
+    def _build_commit_message(
+        self,
+        rel_path: str,
+        update_record: Optional[Dict[str, Any]],
+        agent_id: Optional[str],
+        message: Optional[str],
+    ) -> str:
+        normalized_reason = self._normalize_update_reason(rel_path, update_record)
+        action = normalized_reason.get("change_type") or "update"
+        summary = message or f"{agent_id or 'agent'}: {action} {rel_path}"
+        reason_json = json.dumps(normalized_reason, ensure_ascii=False, sort_keys=True)
+        return f"{summary}\n\nupdate_reason: {reason_json}"
         
     def commit_file(
         self,
@@ -350,8 +573,7 @@ class RepoManager:
         self._ensure_git(author_name, author_email)
 
         # 构造提交信息
-        default_action = (update_record or {}).get("change_type") or "update"
-        msg = message or f"{agent_id or 'agent'}: {default_action} {rel}"
+        msg = self._build_commit_message(rel, update_record, agent_id, message)
 
         # 仅暂存该文件；如果文件不存在或不可暂存，直接返回 None
         try:
@@ -359,8 +581,8 @@ class RepoManager:
         except subprocess.CalledProcessError:
             return None
 
-        # 检查是否有暂存的更改，若无则跳过提交
-        diff = self._git("diff", "--cached", "--name-only", check=False)
+        # 检查该文件是否有暂存更改，避免误读其他 worker 的 staged 文件。
+        diff = self._git("diff", "--cached", "--name-only", "--", rel, check=False)
         if not (diff.stdout or "").strip():
             return None
 
@@ -374,7 +596,7 @@ class RepoManager:
 
         # 执行提交：不使用 check=True，避免抛异常；提交失败则返回 None
         ret = subprocess.run(
-            ["git", "commit", "-m", msg, "--no-verify"],
+            ["git", "commit", "-m", msg, "--no-verify", "--only", "--", rel],
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -387,4 +609,7 @@ class RepoManager:
 
         # 返回当前 HEAD
         res = self._git("rev-parse", "HEAD", check=False)
-        return res.stdout.strip() if res.returncode == 0 else None
+        commit_hash = res.stdout.strip() if res.returncode == 0 else None
+        if commit_hash and agent_id:
+            self.integrate_agent_branch(agent_id)
+        return commit_hash

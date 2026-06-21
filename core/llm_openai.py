@@ -22,7 +22,15 @@ except Exception:
     OpenAI = None
 
 class OpenAILLM:
-    def __init__(self, model: str = "gpt-4o", temperature: float = 0.2, max_tokens: int = 4000, base_url: Optional[str] = None, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        model: str = "gpt-4o",
+        temperature: float = 0.2,
+        max_tokens: int = 4000,
+        top_p: float = 0.95,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         assert OpenAI is not None, "Please `pip install openai`>=1.0"
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -31,6 +39,14 @@ class OpenAILLM:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.top_p = top_p
+        self.total_tokens = 0
+
+    def _record_usage(self, resp) -> None:
+        usage = getattr(resp, "usage", None)
+        total = getattr(usage, "total_tokens", None)
+        if isinstance(total, int):
+            self.total_tokens += total
 
     async def text(self, prompt: str) -> str:
         for attempt in range(3):
@@ -38,9 +54,12 @@ class OpenAILLM:
                 resp = await asyncio.to_thread(self.client.chat.completions.create,
                     model=self.model,
                     temperature=self.temperature,
+                    top_p=self.top_p,
+                    max_tokens=self.max_tokens,
                     messages=[{"role":"system","content":"You are a senior software engineer."},
                               {"role":"user","content":prompt}],
                 )
+                self._record_usage(resp)
                 return resp.choices[0].message.content or ""
             except Exception as e:
                 if attempt == 2: raise
@@ -111,12 +130,15 @@ class OpenAILLM:
         resp = await asyncio.to_thread(self.client.chat.completions.create,
             model=self.model,
             temperature=self.temperature,
+            top_p=self.top_p,
+            max_tokens=self.max_tokens,
             response_format={"type":"json_object"},
             messages=[
                 {"role":"system","content":"Return ONLY valid minified JSON. Do not include extra commentary."},
                 {"role":"user","content":prompt},
             ],
         )
+        self._record_usage(resp)
         return resp.choices[0].message.content or ""
 
     def _safe_parse_json(self, text: str) -> Optional[Dict[str, Any]]:

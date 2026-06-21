@@ -99,6 +99,70 @@ class GenerateCodeAction(Action):
             issues_excerpt=issues_excerpt or "(无)"
         )
 
+    def _exported_symbols(self, brief: Dict[str, Any]) -> list[str]:
+        symbols: list[str] = []
+        for func in brief.get("functions", []) or []:
+            name = func.get("name")
+            if name:
+                symbols.append(name)
+        for cls in brief.get("classes", []) or []:
+            name = cls.get("name")
+            if name:
+                symbols.append(name)
+        return symbols
+
+    def _typed_signatures(self, brief: Dict[str, Any]) -> list[str]:
+        signatures: list[str] = []
+        for func in brief.get("functions", []) or []:
+            sig = func.get("signature")
+            if sig:
+                signatures.append(sig)
+        for cls in brief.get("classes", []) or []:
+            if cls.get("init_signature"):
+                signatures.append(cls["init_signature"])
+            for method in cls.get("methods", []) or []:
+                sig = method.get("signature")
+                if sig:
+                    signatures.append(sig)
+        return signatures
+
+    def _affected_dependent_files(self, file_spec: Dict[str, Any], issues: Optional[Dict[str, Any]]) -> list[str]:
+        if not issues:
+            return []
+        raw = (
+            issues.get("affected_dependent_files")
+            or issues.get("affected_dependents")
+            or issues.get("dependent_files")
+            or []
+        )
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return []
+        target = file_spec.get("path")
+        result = []
+        for item in raw:
+            if isinstance(item, str) and item and item != target and item not in result:
+                result.append(item)
+        return result
+
+    def _compatibility_note(
+        self,
+        change_type: str,
+        modified_exported_symbols: list[str],
+        affected_dependent_files: list[str],
+        issues: Optional[Dict[str, Any]],
+    ) -> str:
+        if issues and issues.get("public_api_changed"):
+            return "Public API may have changed; dependent files should be rechecked."
+        if affected_dependent_files:
+            return "Potential downstream impact inferred from QA issues."
+        if change_type == "create":
+            return "New file; no existing callers should be broken."
+        if modified_exported_symbols:
+            return "Exported symbols preserved or updated in place; no known compatibility break."
+        return "No exported symbol changes detected."
+
     async def run(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], llm, repo_manager, agent_id: str, issues: Optional[Dict[str, Any]] = None):
         prompt = self._build_prompt(file_spec, briefs, issues)
         raw_code = await llm.text(prompt)
@@ -106,31 +170,58 @@ class GenerateCodeAction(Action):
         # 去除 Markdown/HTML 代码块围栏，确保写入与 AST 解析的源码干净
         code = strip_code_fences(raw_code)
 
-        # change_type: 若文件已存在则为 modify，否则 create
-        change_type = "modify" if repo_manager.exists(file_spec["path"]) else "create"
+        lock_factory = getattr(repo_manager, "collaboration_lock", None)
+        if lock_factory is None:
+            from contextlib import nullcontext
+            lock_factory = nullcontext
 
-        # 写入代码（按 agent 权限）
-        repo_manager.write_file(file_spec["path"], code, agent_id=agent_id)
+        with lock_factory():
+            checkout = getattr(repo_manager, "checkout_agent_branch", None)
+            if checkout:
+                checkout(agent_id)
 
-        # 生成简报，容错处理语法错误（例如未完全移除围栏或生成代码不合法）
-        try:
-            brief = to_brief(code)
-        except SyntaxError:
-            brief = {"functions": [], "classes": [], "error": "syntax error in generated code"}
+            # change_type: 若文件已存在则为 modify，否则 create
+            change_type = "modify" if repo_manager.exists(file_spec["path"]) else "create"
 
-        ur = {
-            "file_path": file_spec["path"],
-            "change_type": change_type,
-            "functions_added": [] if change_type == "modify" else brief.get("functions", []),
-            "functions_modified": brief.get("functions", []) if change_type == "modify" else [],
-            "functions_removed": [],
-            "classes_added": [] if change_type == "modify" else brief.get("classes", []),
-            "classes_modified": brief.get("classes", []) if change_type == "modify" else [],
-            "classes_removed": [],
-            "rationale": "fix implementation per QA feedback" if issues else "initial implementation based on file_spec",
-            "related_files_brief_used": list(briefs.keys())
-        }
+            # 写入代码（按 agent 权限）
+            repo_manager.write_file(file_spec["path"], code, agent_id=agent_id)
 
-        # 依赖现有 RepoManager 的 commit_file 实现
-        repo_manager.commit_file(file_spec["path"], ur, agent_id)
-        return brief
+            # 生成简报，容错处理语法错误（例如未完全移除围栏或生成代码不合法）
+            try:
+                brief = to_brief(code)
+            except SyntaxError:
+                brief = {"functions": [], "classes": [], "error": "syntax error in generated code"}
+
+            modified_exported_symbols = self._exported_symbols(brief)
+            affected_dependent_files = self._affected_dependent_files(file_spec, issues)
+            compatibility_note = self._compatibility_note(
+                change_type,
+                modified_exported_symbols,
+                affected_dependent_files,
+                issues,
+            )
+
+            ur = {
+                "target_file": file_spec["path"],
+                "file_path": file_spec["path"],
+                "change_type": change_type,
+                "functions_added": [] if change_type == "modify" else brief.get("functions", []),
+                "functions_modified": brief.get("functions", []) if change_type == "modify" else [],
+                "functions_removed": [],
+                "classes_added": [] if change_type == "modify" else brief.get("classes", []),
+                "classes_modified": brief.get("classes", []) if change_type == "modify" else [],
+                "classes_removed": [],
+                "modified_exported_symbols": modified_exported_symbols,
+                "compatibility_note": compatibility_note,
+                "affected_dependent_files": affected_dependent_files,
+                "rationale": "fix implementation per QA feedback" if issues else "initial implementation based on file_spec",
+                "related_files_brief_used": list(briefs.keys())
+            }
+
+            # 依赖现有 RepoManager 的 commit_file 实现
+            repo_manager.commit_file(file_spec["path"], ur, agent_id)
+            brief["latest_update_reason"] = ur
+            brief["compatibility_note"] = compatibility_note
+            brief["typed_signatures"] = self._typed_signatures(brief)
+            brief.setdefault("invariants", [])
+            return brief

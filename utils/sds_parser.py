@@ -2,6 +2,7 @@
 from __future__ import annotations
 from core.models import SDS, RepoNode, FileSpec, DevAssignment, FuncBrief, ClassBrief
 from typing import Dict, Any, List
+from utils.sds_normalizer import normalize_sds_candidate
 
 def _node(d: Dict[str, Any]) -> RepoNode:
     return RepoNode(path=d["path"], type=d["type"], children=[_node(c) for c in d.get("children", [])])
@@ -11,6 +12,7 @@ def _cls(d): return ClassBrief(name=d["name"], init_signature=d.get("init_signat
                                methods=[_func(m) for m in d.get("methods",[])], doc=d.get("doc",""))
 
 def parse_sds(sds_json: Dict[str, Any]) -> SDS:
+    sds_json = normalize_sds_candidate(sds_json)
     repo_nodes = [_node(n) for n in sds_json["repo_structure"]]
     file_specs = []
     for fs in sds_json["file_specs"]:

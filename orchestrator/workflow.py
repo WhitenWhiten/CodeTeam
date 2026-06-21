@@ -1,7 +1,9 @@
 # orchestrator/workflow.py
 from __future__ import annotations
 import asyncio
-from typing import Dict, Any, List, Set
+import time
+from queue import Empty
+from typing import Dict, Any, List, Set, Mapping
 from roles.architect_agent import ArchitectAgent
 from roles.cto_agent import CTOAgent
 from roles.developer_agent import DeveloperAgent
@@ -15,11 +17,13 @@ from utils.allowed_files import flatten_repo_structure
 from utils.event_bus import EventBus
 from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime import PythonRuntime
+from orchestrator.scheduler import DependencyScheduler
 import os
 
 class MultiAgentCodegenWorkflow:
     def __init__(self, ctx):
         self.ctx = ctx
+        self._started_at = time.monotonic()
 
     def _rag_client(self):
         if not getattr(self.ctx.cfg.rag, "enabled", False):
@@ -47,8 +51,10 @@ class MultiAgentCodegenWorkflow:
         return sds_list
 
     async def run(self, question: str) -> str:
+        self._check_resource_limits()
         # 1) Architect
         sds_list = await self._collect_sds(question)
+        self._check_resource_limits()
         # 2) CTO select
         cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
         decision = await cto.choose(question, sds_list)
@@ -59,6 +65,7 @@ class MultiAgentCodegenWorkflow:
             assignment_seed=self.ctx.cfg.developer_allocation.assignment_seed,
         )
         sds = parse_sds(chosen_sds)  # models.SDS
+        self._check_resource_limits()
 
         # 3) Repo init with permissions
         allowed_all: Set[str] = set(flatten_repo_structure(chosen_sds["repo_structure"]))
@@ -130,14 +137,14 @@ class MultiAgentCodegenWorkflow:
             dev.start()
             dev_threads.append(dev)
 
-        # 7) 首轮实现任务分发
-        for fs in sds.file_specs:
-            dev_id = next(d.developer_id for d in sds.dev_plan if fs.path in d.file_paths)
-            event_bus.emit(f"dev_task:{dev_id}", {"type": "implement", "file_path": fs.path})
-        self._await_dev_round_done(event_bus, expected=len(sds.file_specs))
+        # 7) 首轮实现任务分发：按 SDS 文件依赖逐批解锁
+        scheduler = DependencyScheduler(sds)
+        self._run_scheduled_dev_tasks(event_bus, scheduler)
+        self._check_resource_limits()
 
         # 8) 测试与修复循环
         for round_no in range(self.ctx.cfg.max_rounds):
+            self._check_resource_limits()
             print(f"Fix Round: {round_no + 1}")
             result = await qa.run_and_feedback()
             if result.get("success", False):
@@ -145,19 +152,58 @@ class MultiAgentCodegenWorkflow:
             fixes = result.get("fix_suggestions", [])
             if not fixes:
                 break
-            for fx in fixes:
-                event_bus.emit(
-                    f"dev_task:{fx['dev_id']}",
-                    {"type": "fix", "file_path": fx["file_path"], "issues": fx.get("issues", {})}
-                )
-            self._await_dev_round_done(event_bus, expected=len(fixes))
+            fix_payloads = scheduler.requeue_from_fixes(fixes)
+            self._run_scheduled_dev_tasks(event_bus, scheduler, payloads=fix_payloads)
+            self._check_resource_limits()
 
         # 9) 停止开发者线程
         for dev in dev_threads:
             event_bus.emit(f"dev_task:{dev.agent_id}", {"type": "exit"})
+        finalize_repo = getattr(repo, "finalize_output_repository", None)
+        if finalize_repo:
+            finalize_repo()
         return str(repo.root)
+
+    def _check_resource_limits(self) -> None:
+        max_wall = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)
+        if max_wall is not None and time.monotonic() - self._started_at > max_wall:
+            raise TimeoutError(f"CodeTeam wall-clock budget exceeded: {max_wall}s")
+
+        max_tokens = getattr(self.ctx.cfg, "max_token_budget", None)
+        total_tokens = getattr(self.ctx.llm, "total_tokens", None)
+        if max_tokens is not None and isinstance(total_tokens, int) and total_tokens > max_tokens:
+            raise RuntimeError(f"CodeTeam token budget exceeded: {total_tokens}>{max_tokens}")
 
     def _await_dev_round_done(self, event_bus, expected: int):
         ok = event_bus.wait_for_count("dev_done", expected=expected, timeout=600)
         if not ok:
             raise TimeoutError("Developers round timeout")
+
+    def _run_scheduled_dev_tasks(
+        self,
+        event_bus: EventBus,
+        scheduler: DependencyScheduler,
+        payloads: Mapping[str, Dict[str, Any]] | None = None,
+        timeout: float = 600,
+    ) -> None:
+        payloads = payloads or {}
+        while scheduler.has_work():
+            self._check_resource_limits()
+            for item in scheduler.dispatch_ready():
+                payload = dict(payloads.get(item.file_path, {"type": "implement"}))
+                payload["file_path"] = item.file_path
+                event_bus.emit(f"dev_task:{item.owner}", payload)
+
+            scheduler.assert_can_progress()
+            try:
+                done = event_bus.take("dev_done", timeout=timeout)
+            except Empty as exc:
+                running = scheduler.running_files()
+                raise TimeoutError(f"Developers round timeout; running={running}") from exc
+
+            file_path = done.get("file") if isinstance(done, dict) else None
+            if not file_path:
+                raise RuntimeError(f"Malformed dev_done event: {done!r}")
+            scheduler.complete(file_path)
+            if isinstance(done, dict) and done.get("error"):
+                raise RuntimeError(f"Developer failed for {file_path}: {done['error']}")

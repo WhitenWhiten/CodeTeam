@@ -15,10 +15,15 @@ def _relative_path(path: str, repo_root: Path) -> str:
         return Path(path).as_posix()
 
 
+def _is_test_path(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return normalized.startswith("tests/") or normalized.startswith(".codeteam_qa/tests/")
+
+
 def _guess_source_file(tb_exc: traceback.TracebackException, repo_root: Path) -> str:
     for frame in reversed(tb_exc.stack):
         rel = _relative_path(frame.filename, repo_root)
-        if rel.endswith(".py") and not rel.startswith("tests/"):
+        if rel.endswith(".py") and not _is_test_path(rel):
             return rel
     for frame in reversed(tb_exc.stack):
         rel = _relative_path(frame.filename, repo_root)
@@ -27,9 +32,15 @@ def _guess_source_file(tb_exc: traceback.TracebackException, repo_root: Path) ->
     return ""
 
 
-def run_pytest_style_tests(repo_root: str) -> Dict[str, Any]:
+def run_pytest_style_tests(repo_root: str, tests_dir: str = "tests") -> Dict[str, Any]:
     root = Path(repo_root).resolve()
-    test_files = sorted(root.glob("tests/test_*.py"))
+    test_root = (root / tests_dir).resolve()
+    try:
+        test_root.relative_to(root)
+    except ValueError:
+        test_root = root / "tests"
+
+    test_files = sorted(test_root.glob("test_*.py"))
     if not test_files:
         return {"success": True, "output": "no tests discovered", "failures": []}
 

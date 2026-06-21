@@ -8,15 +8,16 @@ from typing import List, Optional
 class RAGConfig(BaseModel):
     enabled: bool = False
     index_dir: str = "./rag"
-    top_k: int = 6
+    top_k: int = 5
     corpus_file: Optional[str] = None
 
 
 class LLMConfig(BaseModel):
     provider: str = "mock"   # mock|openai
-    model: str = "gpt-3.5-turbo"
+    model: str = "Qwen2.5-72B-Instruct"
     temperature: float = 0.2
-    max_tokens: int = 10000
+    top_p: float = 0.95
+    max_tokens: int = 8192
     base_url: Optional[str] = "https://api.openai-proxy.org/v1"
 
 
@@ -31,12 +32,16 @@ class DeveloperAllocationConfig(BaseModel):
 
 
 class SystemConfig(BaseModel):
-    architects: int = 3
+    architects: int = 4
     sds_retry: int = 1
     max_rounds: int = 2
+    max_wall_clock_seconds: Optional[int] = None
+    max_token_budget: Optional[int] = None
     workspace: str = "./workspace"
     allow_languages: List[str] = ["python"]
     user_question: str = "生成一个简化版 online shop 程序，包含商品浏览、加入购物车和结算总价三个核心能力"
+    requirements_file: Optional[str] = None
+    preprocess_requirements: bool = True
     async_mode: bool = True
     llm: LLMConfig = LLMConfig()
     rag: RAGConfig = RAGConfig()
@@ -60,13 +65,45 @@ def load_config(path: str = None) -> SystemConfig:
     if model:
         cfg.llm.model = model
 
+    top_p = os.getenv("CODETEAM_LLM_TOP_P")
+    if top_p:
+        cfg.llm.top_p = float(top_p)
+
+    max_tokens = os.getenv("CODETEAM_LLM_MAX_TOKENS")
+    if max_tokens:
+        cfg.llm.max_tokens = int(max_tokens)
+
     question = os.getenv("CODETEAM_USER_QUESTION")
     if question:
         cfg.user_question = question
 
+    requirements_file = os.getenv("CODETEAM_REQUIREMENTS_FILE")
+    if requirements_file:
+        cfg.requirements_file = requirements_file
+
+    preprocess_requirements = os.getenv("CODETEAM_PREPROCESS_REQUIREMENTS")
+    if preprocess_requirements is not None:
+        cfg.preprocess_requirements = _parse_bool(preprocess_requirements)
+
     workspace = os.getenv("CODETEAM_WORKSPACE")
     if workspace:
         cfg.workspace = workspace
+
+    architects = os.getenv("CODETEAM_ARCHITECTS")
+    if architects:
+        cfg.architects = max(1, int(architects))
+
+    max_rounds = os.getenv("CODETEAM_MAX_QA_ROUNDS")
+    if max_rounds:
+        cfg.max_rounds = max(0, int(max_rounds))
+
+    max_wall_clock = os.getenv("CODETEAM_MAX_WALL_CLOCK_SECONDS")
+    if max_wall_clock:
+        cfg.max_wall_clock_seconds = max(1, int(max_wall_clock))
+
+    max_token_budget = os.getenv("CODETEAM_MAX_TOKEN_BUDGET")
+    if max_token_budget:
+        cfg.max_token_budget = max(1, int(max_token_budget))
 
     async_mode = os.getenv("CODETEAM_ASYNC_MODE")
     if async_mode is not None:
@@ -79,6 +116,10 @@ def load_config(path: str = None) -> SystemConfig:
     corpus_file = os.getenv("CODETEAM_RAG_CORPUS")
     if corpus_file:
         cfg.rag.corpus_file = corpus_file
+
+    rag_top_k = os.getenv("CODETEAM_RAG_TOP_K")
+    if rag_top_k:
+        cfg.rag.top_k = max(1, int(rag_top_k))
 
     git_enabled = os.getenv("CODETEAM_GIT_COLLAB_ENABLED")
     if git_enabled is not None:

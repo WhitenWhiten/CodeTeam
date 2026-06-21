@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import re
+import shlex
 import shutil
 from typing import Dict, Any, List
 from pathlib import Path
@@ -14,9 +15,26 @@ class PythonRuntimeAsync:
     def _can_run_pytest(self) -> bool:
         return shutil.which("pytest") is not None or importlib.util.find_spec("pytest") is not None
 
+    def _pytest_tests_dir(self, run_command: str) -> str:
+        try:
+            parts = shlex.split(run_command or "", posix=False)
+        except ValueError:
+            parts = (run_command or "").split()
+        for part in parts:
+            normalized = part.strip("'\"").replace("\\", "/")
+            if normalized in {"tests", "tests/", ".codeteam_qa/tests", ".codeteam_qa/tests/"}:
+                return normalized.rstrip("/")
+            if normalized.startswith(".codeteam_qa/tests/"):
+                return ".codeteam_qa/tests"
+        return "tests"
+
+    def _is_test_path(self, path: str) -> bool:
+        normalized = path.replace("\\", "/")
+        return normalized.startswith("tests/") or normalized.startswith(".codeteam_qa/tests/")
+
     async def run_tests(self, repo_root: str, run_command: str) -> Dict[str, Any]:
         if "pytest" in run_command and not self._can_run_pytest():
-            return await asyncio.to_thread(run_pytest_style_tests, repo_root)
+            return await asyncio.to_thread(run_pytest_style_tests, repo_root, self._pytest_tests_dir(run_command))
         try:
             proc = await asyncio.create_subprocess_shell(
                 run_command,
@@ -51,7 +69,7 @@ class PythonRuntimeAsync:
         source_paths = []
         test_paths = []
         for match in path_matches:
-            if match.startswith("tests/"):
+            if self._is_test_path(match):
                 if match not in test_paths:
                     test_paths.append(match)
             else:

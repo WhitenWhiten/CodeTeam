@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import List, Dict, Any
+from core.schemas import validate_sds
+from utils.sds_normalizer import normalize_sds_candidate
 try:
     from metagpt.actions import Action
 except ImportError:
@@ -16,7 +18,8 @@ except ImportError:
 CTO_PROMPT_FALLBACK = """你是 CTO。你的任务是从多个候选 SDS 中选择最适合当前需求、且最适合当前执行器落地的一份方案。
 
 输出契约：
-- 只输出单个 JSON 对象，格式必须为 `{{"chosen_index": number, "rationale": string}}`。
+- 只输出单个 JSON 对象，格式必须为 `{{"chosen_index": number, "rationale": string, "scores": {{"structural_validity": number, "interface_consistency": number, "implementability": number, "developer_plan": number}}}}`。
+- `scores` 可省略以兼容旧格式；若输出，每项只能是 0、1、2。
 - 不要输出 Markdown、代码块、解释、注释或任何额外前后缀文本。
 
 评估维度：
@@ -33,6 +36,7 @@ CTO_PROMPT_FALLBACK = """你是 CTO。你的任务是从多个候选 SDS 中选�
 决策要求：
 - 只能从给定 SDS 列表中选择，不要虚构新方案。
 - 当多个方案接近时，优先选择结构更清晰、接口更稳定、测试策略更自然的一份。
+- 候选 SDS 已经过契约校验；`chosen_index` 必须是候选SDS列表中的有效下标。
 
 用户需求：
 {question}
@@ -66,15 +70,47 @@ class SelectSDSAction(Action):
 
     def _build_prompt(self, question: str, sds_list: List[Dict[str, Any]], rag_client=None) -> str:
         rag_docs = rag_client.query(question) if rag_client else []
+        normalized_sds_list, _ = self._valid_normalized_candidates(sds_list)
         tpl = self._load_prompt_template()
         return tpl.format(
             question=question,
-            sds_list=json.dumps(sds_list, ensure_ascii=False, indent=2),
+            sds_list=json.dumps(normalized_sds_list, ensure_ascii=False, indent=2),
             rag_snippets=self._render_rag(rag_docs),
         )
 
+    def _valid_normalized_candidates(self, sds_list: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
+        valid = []
+        errors = []
+        for idx, candidate in enumerate(sds_list):
+            try:
+                normalized = normalize_sds_candidate(candidate)
+                validate_sds(normalized)
+            except Exception as exc:
+                errors.append(f"candidate {idx}: {exc}")
+                continue
+            valid.append(normalized)
+        return valid, errors
+
+    def _chosen_index_or_fallback(self, result: Dict[str, Any], candidate_count: int) -> int:
+        try:
+            idx = int(result.get("chosen_index", 0))
+        except (TypeError, ValueError):
+            return 0
+        if idx < 0 or idx >= candidate_count:
+            return 0
+        return idx
+
     async def run(self, question: str, sds_list: List[Dict[str, Any]], rag_client=None) -> Dict[str, Any]:
-        prompt = self._build_prompt(question, sds_list, rag_client)
+        valid_sds_list, errors = self._valid_normalized_candidates(sds_list)
+        if not valid_sds_list:
+            raise ValueError(f"no valid SDS candidates. errors={errors}")
+
+        prompt = self._build_prompt(question, valid_sds_list, rag_client)
         result = await self.llm.structured_json(prompt, schema="CTO_DECISION")
-        idx = int(result.get("chosen_index", 0))
-        return {"chosen_sds": sds_list[idx], "rationale": result.get("rationale", "")}
+        if not isinstance(result, dict):
+            result = {}
+        idx = self._chosen_index_or_fallback(result, len(valid_sds_list))
+        response = {"chosen_sds": valid_sds_list[idx], "rationale": result.get("rationale", "")}
+        if "scores" in result:
+            response["scores"] = result["scores"]
+        return response

@@ -15,6 +15,7 @@ from actions.generate_code import DEV_PROMPT_FALLBACK, GenerateCodeAction
 from actions.generate_tests import GenerateTestsAction, QA_PROMPT_FALLBACK
 from actions.select_sds import CTO_PROMPT_FALLBACK, SelectSDSAction
 from core.llm import LLMClient
+from core.requirements_preprocessor import preprocess_requirements
 from core.repo_manager import RepoManager
 from rag.rag_client import RAGClient
 from runtime_adapters.python_runtime import PythonRuntime
@@ -51,6 +52,45 @@ class RAGClientTests(unittest.TestCase):
 
             self.assertTrue(results)
             self.assertEqual(results[0]["meta"]["source"], "demo/shop-fastapi")
+
+
+class RequirementsPreprocessorTests(unittest.TestCase):
+    def test_preprocess_requirements_removes_readme_noise_and_keeps_actionable_blocks(self):
+        raw = """# Demo Project
+
+[![build](https://example.com/badge.svg)](https://example.com)
+![logo](logo.png)
+
+## Features
+- Catalog browsing
+  - Cart checkout
+
+```bash
+pytest -q
+```
+
+```text
+purely decorative banner
+```
+
+## Changelog
+- v1.0 old release note
+
+## API
+Use `checkout_total(items)`.
+"""
+
+        normalized = preprocess_requirements(raw)
+
+        self.assertIn("# Demo Project", normalized)
+        self.assertIn("- Catalog browsing", normalized)
+        self.assertIn("- Cart checkout", normalized)
+        self.assertIn("```bash\npytest -q\n```", normalized)
+        self.assertIn("## API", normalized)
+        self.assertNotIn("badge.svg", normalized)
+        self.assertNotIn("logo.png", normalized)
+        self.assertNotIn("purely decorative banner", normalized)
+        self.assertNotIn("old release note", normalized)
 
 
 class FailureRoutingTests(unittest.TestCase):
@@ -212,6 +252,16 @@ class MockAlignmentTests(unittest.TestCase):
 
 
 class ConfigAndFeatureToggleTests(unittest.TestCase):
+    def test_paper_aligned_defaults_are_exposed(self):
+        cfg = load_config()
+
+        self.assertEqual(cfg.architects, 4)
+        self.assertEqual(cfg.rag.top_k, 5)
+        self.assertEqual(cfg.llm.model, "Qwen2.5-72B-Instruct")
+        self.assertEqual(cfg.llm.top_p, 0.95)
+        self.assertEqual(cfg.llm.max_tokens, 8192)
+        self.assertTrue(cfg.preprocess_requirements)
+
     def test_load_config_parses_feature_flags_and_rag_off_disables_bootstrap_rag(self):
         with patch.dict(
             os.environ,

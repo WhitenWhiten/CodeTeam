@@ -14,6 +14,7 @@ def bootstrap(cfg):
             model=cfg.llm.model,
             temperature=cfg.llm.temperature,
             max_tokens=cfg.llm.max_tokens,
+            top_p=cfg.llm.top_p,
             base_url=cfg.llm.base_url,
         )
     else:

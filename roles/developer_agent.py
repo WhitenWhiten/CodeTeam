@@ -41,8 +41,12 @@ class DeveloperAgent(threading.Thread):
 
     def _collect_briefs(self, file_spec: dict) -> dict:
         briefs = {}
+        extra_count = 0
         for dep in file_spec.get("dependencies", []):
             if dep not in self.assigned_files:
+                if extra_count >= 2:
+                    break
+                extra_count += 1
                 res = self._req.run(target_file=dep, brief_manager=self.briefs)
                 res = self._await(res)
                 if res:
@@ -56,7 +60,7 @@ class DeveloperAgent(threading.Thread):
             file_spec=file_spec, briefs=briefs, llm=self.llm,
             repo_manager=self.repo, agent_id=self.agent_id, issues=None
         ))
-        self.briefs.update_brief(file_path, brief)
+        self.briefs.update_brief(file_path, brief, update_reason=brief.get("latest_update_reason"))
         self.event_bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path})
 
     def _fix(self, file_path: str, issues: dict):
@@ -66,7 +70,7 @@ class DeveloperAgent(threading.Thread):
             file_spec=file_spec, briefs=briefs, llm=self.llm,
             repo_manager=self.repo, agent_id=self.agent_id, issues=issues
         ))
-        self.briefs.update_brief(file_path, brief)
+        self.briefs.update_brief(file_path, brief, update_reason=brief.get("latest_update_reason"))
         self.event_bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path})
 
     def run(self):
