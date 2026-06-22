@@ -198,7 +198,7 @@ CodeTeam/
 
 ```bibtex
 @article{CodeTeam,
-  author = {Wang, Yifei and Li, Ruiyin and Liang, Peng and Feng, Qiong and Li, Zengyang and Shahin, Mojtaba},
+  author = {Wang, Yifei and Li, Ruiyin and Liang, Peng and Feng, Qiong and Li, Zengyang and Shahin, Mojtaba and Ali Khan, Arif},
   title = {{CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation}},
   journal = {arXiv preprint arXiv:xxxx.xxxxx},
   year = {2026}
