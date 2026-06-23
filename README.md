@@ -6,7 +6,7 @@
     <a href="https://github.com/WhitenWhiten/CodeTeam">
       <img src="https://img.shields.io/badge/Code-GitHub-2d333b?style=flat-square&logo=github" alt="github">
     </a>
-    <a href="">
+    <a href="https://arxiv.org/abs/2606.22082">
       <img src="https://img.shields.io/badge/Paper-arXiv-b31b1b?style=flat-square&logo=arxiv&logoColor=white" alt="arXiv">
     </a>
   </p>
@@ -200,7 +200,7 @@ CodeTeam/
 @article{CodeTeam,
   author = {Wang, Yifei and Li, Ruiyin and Liang, Peng and Feng, Qiong and Li, Zengyang and Shahin, Mojtaba and Ali Khan, Arif},
   title = {{CodeTeam: An LLM-Powered Multi-Agent Framework for Repository-Level Code Generation}},
-  journal = {arXiv preprint arXiv:xxxx.xxxxx},
+  journal = {arXiv preprint arXiv:2606.22082},
   year = {2026}
 }
 ```
