@@ -47,8 +47,9 @@ class DependencyScheduler:
     package or undeclared resource and is ignored for scheduling.
     """
 
-    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None, state=None):
+    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None, state=None, max_concurrent=None):
         self.state = state
+        self.max_concurrent = max_concurrent
         if dev_plan is None and hasattr(sds_or_file_specs, "file_specs"):
             file_specs = list(sds_or_file_specs.file_specs)
             dev_plan = list(getattr(sds_or_file_specs, "dev_plan", []))
@@ -166,6 +167,8 @@ class DependencyScheduler:
         dispatched: List[ScheduledFile] = []
         busy_owners = set(self.running.values())
         for owner in self.owner_order:
+            if self.max_concurrent is not None and len(self.running) >= self.max_concurrent:
+                break
             if owner in busy_owners:
                 continue
             candidates = self.ready_files(owner)

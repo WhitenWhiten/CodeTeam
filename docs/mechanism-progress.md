@@ -15,7 +15,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M10: Bounded context and briefing
 - [x] M11: Planning diversity
 - [x] M12: Closed resource state
-- [ ] M13: Workload-aware allocation
+- [x] M13: Workload-aware allocation
 - [ ] M14: Retrieval information contracts
 - [ ] M15: Requirement traceability
 - [ ] M16: Mechanism controls and acceptance
@@ -52,3 +52,5 @@ M11: Recorded file/API/module similarities and rename-independent topology summa
 M12: Durable counters now distinguish planning, generation retries, briefing, QA tests and interface requeues; per-file caps stop drift, resume preserves state, failed/budget-stopped outputs list pending and unverified files. Uncapped QA requires a global ceiling. Batch C pending.
 
 Batch C: 26 passed; one regression exposed an unsafe source field in the public summary allowlist. Renamed provenance to origin and removed source from the allowlist; focused recheck follows.
+
+M13: Added explicit Architect or structural-heuristic effort estimates, reproducible owner/dependency/load reports and concurrent slot queueing that preserves ownership. Retained the documented small-batch QA barrier. Final batch pending.

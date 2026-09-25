@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Set, Mapping
 from pathlib import Path
 from core.ast_utils import to_brief
 from core.mechanism_state import MechanismState, count
+from core.workload import annotate_workload, workload_report
 from core.schemas import validate_qa_test_bundle
 from roles.architect_agent import ArchitectAgent
 from roles.cto_agent import CTOAgent
@@ -265,7 +266,7 @@ class MultiAgentCodegenWorkflowAsync:
                 try:
                     trace = await arch.propose_sds(question, design_preference=profile.preference,
                                                    claimed_summary=claimed_summary, return_trace=True)
-                    normalized = normalize_sds_candidate(trace["sds"])
+                    normalized = annotate_workload(normalize_sds_candidate(trace["sds"]))
                     validate_sds(normalized)
                     diversity = compare_designs(normalized, sds_list, self.ctx.cfg.diversity_similarity_threshold)
                     policy = self.ctx.cfg.duplicate_candidate_policy
@@ -366,7 +367,9 @@ class MultiAgentCodegenWorkflowAsync:
             for path, brief in self._restored.get("briefs", {}).items():
                 brief_mgr.update_brief(path, brief)
         bus = AsyncEventBus()
-        scheduler = DependencyScheduler(sds, state=self._mechanism_state)
+        scheduler = DependencyScheduler(sds, state=self._mechanism_state, max_concurrent=self.ctx.cfg.developer_allocation.max_concurrent)
+        self._artifact_json("planning/workload.json", workload_report(sds, scheduler, self.ctx.cfg.developer_allocation.max_concurrent,
+            None if self.ctx.cfg.max_model_calls is None else max(0,self.ctx.cfg.max_model_calls-getattr(self.ctx.llm,"call_count",0))))
         self._scheduler = scheduler
         if self._restored:
             scheduler.restore_completed(self._restored["completed"])

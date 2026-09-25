@@ -27,6 +27,7 @@ class FileSpec:
     interfaces: Dict[str, List]  # {"functions":[FuncBrief], "classes":[ClassBrief]}
     dependencies: List[str] = field(default_factory=list)
     invariants: List[dict] = field(default_factory=list)
+    workload: Dict = field(default_factory=dict)
 
 @dataclass
 class DevAssignment:

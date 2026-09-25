@@ -38,3 +38,5 @@ Artifact completeness:
 - Declare installable dependencies explicitly in dependencies and include a requirements.txt or pyproject.toml producer. Framework descriptions alone do not install packages.
 
 For each file, optional invariants must carry statement and source (requirement ID or explicit SDS design rule). These are design claims, not verified behavior.
+
+Include workload for each file: positive relative effort, source="architect", and rationale based on interfaces and dependencies. A missing estimate is explicitly replaced by a structural heuristic, never represented as your estimate.

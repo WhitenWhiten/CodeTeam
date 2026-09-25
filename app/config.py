@@ -48,6 +48,7 @@ class GitConfig(ConfigModel):
 
 
 class DeveloperAllocationConfig(ConfigModel):
+    max_concurrent: int = Field(default=4, ge=1)
     dynamic_enabled: bool = True
     fixed_agents: int = Field(default=4, ge=1)
     assignment_seed: Optional[int] = None

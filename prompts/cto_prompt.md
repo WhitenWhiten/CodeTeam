@@ -10,3 +10,5 @@ CANDIDATES_JSON
 END_CANDIDATES
 RAG references (optional):
 {rag_snippets}
+
+Check file workload estimates and owner load balance when scoring developer_plan. Execution slots queue excess owners without changing ownership.
