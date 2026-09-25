@@ -1,6 +1,7 @@
 # actions/generate_code.py
 from __future__ import annotations
 from pathlib import Path
+import json
 from typing import Dict, Any, Optional
 
 try:
@@ -60,7 +61,7 @@ class GenerateCodeAction(Action):
             return p.read_text(encoding="utf-8")
         return DEV_PROMPT_FALLBACK
 
-    def _build_prompt(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], issues: Optional[Dict[str, Any]] = None) -> str:
+    def _build_prompt(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], issues: Optional[Dict[str, Any]] = None, current_source: str = "") -> str:
         functions = file_spec["interfaces"].get("functions", [])
         classes = file_spec["interfaces"].get("classes", [])
         iface_lines = []
@@ -83,21 +84,55 @@ class GenerateCodeAction(Action):
                 brief_lines.append(f"  - class {c['name']}")
                 for m in c.get("methods", []):
                     brief_lines.append(f"    - {m['signature']}")
-        briefs_pretty = "\n".join(brief_lines) if brief_lines else "(none)"
+        briefs_pretty = json.dumps(briefs, ensure_ascii=False, indent=2) if briefs else "(none)"
 
         issues_excerpt = ""
         if issues:
-            stack = issues.get("stack", "")
-            issues_excerpt = stack[:2000]  # Keep the prompt compact.
+            issues_excerpt = json.dumps(issues, ensure_ascii=False, indent=2)
 
         tpl = self._load_prompt_template()
-        return tpl.format(
+        prompt = tpl.format(
             file_path=file_spec["path"],
             responsibilities=file_spec.get("responsibilities", ""),
             interfaces_pretty=interfaces_pretty,
             briefs_pretty=briefs_pretty,
             issues_excerpt=issues_excerpt or "(none)"
         )
+        return prompt + ("\n\nCurrent target file (complete):\n" + (current_source or "(new file)")
+                         + "\n\nReturn the complete replacement file. Preserve unrelated behavior, helpers and public interfaces.")
+
+    def _validate_candidate(self, code, file_spec):
+        if not code.strip():
+            raise ValueError("Generated file is empty")
+        if not file_spec["path"].endswith(".py"):
+            return {"functions": [], "classes": []}
+        brief = to_brief(code)
+        for kind in ("functions", "classes"):
+            actual = {item["name"]: item for item in brief[kind]}
+            for expected in file_spec["interfaces"].get(kind, []):
+                if expected["name"] not in actual:
+                    raise ValueError(f"Missing declared {kind}: {expected['name']}")
+                if kind == "classes":
+                    methods = {m["name"] for m in actual[expected["name"]]["methods"]}
+                    required = {m["name"] for m in expected.get("methods", [])}
+                    if expected.get("init_signature"):
+                        required.add("__init__")
+                    if not required.issubset(methods):
+                        raise ValueError(f"Missing declared methods: {sorted(required - methods)}")
+        return brief
+
+    def _interface_delta(self, before, after):
+        delta = {}
+        changed = []
+        for kind in ("functions", "classes"):
+            old = {x["name"]: x for x in before.get(kind, [])}
+            new = {x["name"]: x for x in after.get(kind, [])}
+            delta[kind + "_added"] = [new[n] for n in sorted(new.keys() - old.keys())]
+            delta[kind + "_removed"] = [old[n] for n in sorted(old.keys() - new.keys())]
+            delta[kind + "_modified"] = [new[n] for n in sorted(old.keys() & new.keys()) if old[n] != new[n]]
+            for suffix in ("_added", "_removed", "_modified"):
+                changed.extend(x["name"] for x in delta[kind + suffix])
+        return delta, sorted(set(changed))
 
     def _exported_symbols(self, brief: Dict[str, Any]) -> list[str]:
         symbols: list[str] = []
@@ -164,11 +199,24 @@ class GenerateCodeAction(Action):
         return "No exported symbol changes detected."
 
     async def run(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], llm, repo_manager, agent_id: str, issues: Optional[Dict[str, Any]] = None):
-        prompt = self._build_prompt(file_spec, briefs, issues)
-        raw_code = await llm.text(prompt)
-
-        # Strip Markdown/HTML code fences so writes and AST parsing receive clean source.
-        code = strip_code_fences(raw_code)
+        path = file_spec["path"]
+        current = repo_manager.read_file(path) if repo_manager.exists(path) else ""
+        try:
+            previous = to_brief(current) if path.endswith(".py") else {"functions": [], "classes": []}
+        except SyntaxError:
+            previous = {"functions": [], "classes": []}
+        feedback = dict(issues or {})
+        for attempt in range(3):
+            prompt = self._build_prompt(file_spec, briefs, feedback, current)
+            code = strip_code_fences(await llm.text(prompt))
+            try:
+                brief = self._validate_candidate(code, file_spec)
+                break
+            except (SyntaxError, ValueError) as exc:
+                if attempt == 2:
+                    raise ValueError(f"Invalid generation for {path}: {exc}") from exc
+                feedback["generation_validation_error"] = str(exc)
+                feedback["rejected_candidate"] = code
 
         lock_factory = getattr(repo_manager, "collaboration_lock", None)
         if lock_factory is None:
@@ -179,6 +227,9 @@ class GenerateCodeAction(Action):
             checkout = getattr(repo_manager, "checkout_agent_branch", None)
             if checkout:
                 checkout(agent_id)
+            latest = repo_manager.read_file(path) if repo_manager.exists(path) else ""
+            if latest != current:
+                raise RuntimeError(f"Target file changed while generating {path}; refusing stale overwrite")
 
             # Use modify for existing files and create for new files.
             change_type = "modify" if repo_manager.exists(file_spec["path"]) else "create"
@@ -186,13 +237,7 @@ class GenerateCodeAction(Action):
             # Write code subject to agent permissions.
             repo_manager.write_file(file_spec["path"], code, agent_id=agent_id)
 
-            # Build a brief and tolerate syntax errors from malformed generated code.
-            try:
-                brief = to_brief(code)
-            except SyntaxError:
-                brief = {"functions": [], "classes": [], "error": "syntax error in generated code"}
-
-            modified_exported_symbols = self._exported_symbols(brief)
+            delta, modified_exported_symbols = self._interface_delta(previous, brief)
             affected_dependent_files = self._affected_dependent_files(file_spec, issues)
             compatibility_note = self._compatibility_note(
                 change_type,
@@ -217,6 +262,10 @@ class GenerateCodeAction(Action):
                 "rationale": "fix implementation per QA feedback" if issues else "initial implementation based on file_spec",
                 "related_files_brief_used": list(briefs.keys())
             }
+            ur.update(delta)
+            ur["public_api_changed"] = bool(current.strip() and modified_exported_symbols)
+            if ur["public_api_changed"]:
+                ur["compatibility_note"] = "Exported interface changed; revalidate dependents."
 
             # Delegate commit details to RepoManager.commit_file.
             repo_manager.commit_file(file_spec["path"], ur, agent_id)

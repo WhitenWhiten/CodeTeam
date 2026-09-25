@@ -5,6 +5,7 @@ from typing import Dict, List
 from actions.generate_code import GenerateCodeAction
 from actions.request_briefing import RequestBriefingAction
 from utils.logger import get_logger
+from core.dependencies import resolve_file_dependencies
 
 class DeveloperWorkerAsync:
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
@@ -12,6 +13,7 @@ class DeveloperWorkerAsync:
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
         self.sds_map = sds_map
+        self.dependencies = resolve_file_dependencies(list(sds_map.values()))
         self.llm = llm
         self.repo = repo_manager
         self.briefs = brief_manager
@@ -42,7 +44,7 @@ class DeveloperWorkerAsync:
                                             llm=self.llm, repo_manager=self.repo,
                                             agent_id=self.agent_id, issues=issues)
                 self.briefs.update_brief(file_path, brief, update_reason=brief.get("latest_update_reason"))
-                await self.bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path})
+                await self.bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path, "update_reason": brief.get("latest_update_reason", {})})
                 self.log.info(f"done {t} {file_path}")
             except Exception as e:
                 self.log.error(f"error {t} {file_path}: {e}")
@@ -50,14 +52,9 @@ class DeveloperWorkerAsync:
 
     async def _collect_briefs(self, file_spec: dict) -> dict:
         briefs = {}
-        extra_count = 0
-        for dep in file_spec.get("dependencies", []):
-            if dep not in self.assigned_files:
-                if extra_count >= 2:
-                    break
-                extra_count += 1
-                # Synchronous action wrapper; call it directly.
-                brief = await self._req.run(target_file=dep, brief_manager=self.briefs)
-                if brief:
-                    briefs[dep] = brief
+        for dep in sorted(self.dependencies[file_spec["path"]]):
+            brief = await self._req.run(target_file=dep, brief_manager=self.briefs)
+            if brief is None:
+                brief = dict(self.sds_map[dep]["interfaces"], source="sds_declared")
+            briefs[dep] = brief
         return briefs
