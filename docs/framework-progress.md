@@ -12,7 +12,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T7: Workspace and Git collaboration semantics.
 - [x] T8: RAG contracts, cache validation and observable fallback.
 - [x] T9: Configuration, durable run records and stage recovery.
-- [ ] T10: Integrated acceptance tests, packaging and usage documentation.
+- [x] T10: Integrated acceptance tests, packaging and usage documentation.
 
 ## Checks
 
@@ -59,3 +59,21 @@ request/response records, usage snapshots and persisted QA bundles. Recovery fro
 the selected-design boundary verifies every source hash, restores completed work
 and pending repair context, and retains prior call/token charges. Wall time is a
 per-invocation limit. Tests cover interrupted runs, source drift and CLI recovery.
+
+T10: The ordinary pytest command discovers the legacy unit tests as well as new
+integration cases. Acceptance exercises class/method contracts, src layouts,
+symbol dependencies, fixed/dynamic allocation, real repairs, missing pytest and
+quoted QA targets. Legacy role imports share the active async implementations.
+The runtime is packaged as codeteam-runtime 0.2.0 with its four prompt resources
+and codeteam CLI; config.example.json and runtime-guide.md document actual scope.
+
+Final verification (2026-09-25):
+- python -m pytest -q -p no:cacheprovider: 104 passed.
+- python scripts/check_install.py: wheel built and installed without network;
+  console entrypoint succeeded outside the checkout, with all four QA tests
+  passing and all four prompt templates present.
+- git diff --check: passed.
+
+These checks use deterministic models/fake provider clients and do not establish
+live-model quality, real vector-model performance or paper benchmark claims.
+All experimental data and pre-existing analysis-script changes remain excluded.

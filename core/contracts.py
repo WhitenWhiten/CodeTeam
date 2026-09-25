@@ -67,6 +67,10 @@ class BudgetExceeded(RuntimeError):
     """A configured resource ceiling prevented further work."""
 
 
+class ModelRequestTimeout(RuntimeError):
+    """An individual model request timed out, independently of the run budget."""
+
+
 class ValidationStopped(RuntimeError):
     """Validation could not converge under the configured repair policy."""
 

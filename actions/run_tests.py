@@ -4,9 +4,12 @@ import shutil
 import subprocess
 import asyncio
 import inspect
+import shlex
+import os
 from pathlib import Path
 from typing import Dict, Mapping
-from runtime_adapters.runner import python_module_args
+from runtime_adapters.runner import python_module_args, command_args
+from core.contracts import repository_path
 from runtime_adapters.process import run_process
 try:
     from metagpt.actions import Action
@@ -27,7 +30,7 @@ class RunTestsAction(Action):
             super().__init__(name="RunTestsAction")
 
     def _safe_test_path(self, path: str) -> Path:
-        normalized = (path or "").replace("\\", "/").strip()
+        normalized = repository_path(path or "")
         if not normalized.startswith("tests/") or ".." in normalized.split("/"):
             raise ValueError(f"invalid QA test path: {path!r}")
         return Path(".codeteam_qa") / normalized
@@ -47,7 +50,7 @@ class RunTestsAction(Action):
         if "pytest" not in (run_command or ""):
             return run_command
 
-        parts = run_command.split()
+        parts = command_args(run_command)
         if not parts:
             return f"pytest -q {temp_rel}"
 
@@ -80,7 +83,7 @@ class RunTestsAction(Action):
 
         if not changed_target and not has_temp_target:
             next_parts.append(temp_rel)
-        return " ".join(next_parts)
+        return subprocess.list2cmdline(next_parts) if os.name == "nt" else shlex.join(next_parts)
 
     def _is_allowed_setup_command(self, command: str) -> bool:
         normalized = " ".join((command or "").strip().split()).lower()
@@ -128,8 +131,8 @@ class RunTestsAction(Action):
                         "command": command,
                         "status": "failed",
                         "returncode": None,
-                        "output": f"TIMEOUT: {exc}",
-                        "reason": "setup command timed out",
+                        "output": str(exc),
+                        "reason": "setup executable could not be started",
                     }
                 )
         return records

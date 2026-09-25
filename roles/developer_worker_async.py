@@ -55,6 +55,6 @@ class DeveloperWorkerAsync:
         for dep in sorted(self.dependencies[file_spec["path"]]):
             brief = await self._req.run(target_file=dep, brief_manager=self.briefs)
             if brief is None:
-                brief = dict(self.sds_map[dep]["interfaces"], source="sds_declared")
+                brief = dict(self.sds_map.get(dep, {}).get("interfaces", {"functions": [], "classes": []}), source="sds_declared")
             briefs[dep] = brief
         return briefs

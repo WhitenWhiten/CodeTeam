@@ -78,6 +78,18 @@ def test_artifact_lock_rejects_concurrent_process_ownership(tmp_path):
     second.release()
 
 
+def test_context_reuse_cannot_overwrite_a_completed_run(tmp_path):
+    cfg = SystemConfig(workspace=str(tmp_path), architects=1)
+    cfg.git.enabled = False
+    ctx = bootstrap(cfg)
+    first = MultiAgentCodegenWorkflow(ctx).run_sync(cfg.user_question)
+    assert first.success
+    saved = (ctx.artifacts.root / "checkpoint.json").read_bytes()
+    second = MultiAgentCodegenWorkflow(ctx).run_sync(cfg.user_question)
+    assert second.status == RunStatus.ERROR and "explicitly resume" in second.reason
+    assert (ctx.artifacts.root / "checkpoint.json").read_bytes() == saved
+
+
 def test_cli_runs_and_resumes_without_new_model_calls(tmp_path, capsys):
     artifacts = tmp_path / "artifacts"
     assert main(["--workspace", str(tmp_path / "workspace"), "--artifacts-dir", str(artifacts), "--architects", "1", "--no-git"]) == 0

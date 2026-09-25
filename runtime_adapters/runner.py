@@ -56,7 +56,8 @@ class RuntimeBase:
             return dict(base, status="environment_error", output=str(exc),
                         failures=[{"category": "environment_error", "message": str(exc), "file_path": "", "stack": ""}])
         if any(arg.startswith("--junit") for arg in argv):
-            return dict(base, status="environment_error", output="CodeTeam manages the JUnit report location")
+            message = "CodeTeam manages the JUnit report location"
+            return dict(base, status="environment_error", output=message, failures=[{"category": "environment_error", "file_path": "", "message": message, "stack": ""}])
         env = os.environ.copy()
         env["PYTHONUTF8"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -70,7 +71,7 @@ class RuntimeBase:
             try:
                 proc = await run_process(argv, root, self.timeout, env)
             except OSError as exc:
-                return dict(base, status="environment_error", output=str(exc))
+                return dict(base, status="environment_error", output=str(exc), failures=[{"category": "environment_error", "file_path": "", "message": str(exc), "stack": ""}])
             base.update(proc)
             base["command"] = argv
             if proc["timed_out"]:

@@ -137,8 +137,8 @@ class FailureRoutingTests(unittest.TestCase):
         self.assertEqual(suggestions[0]["file_path"], "shop/cart.py")
 
 
-class RuntimeFallbackTests(unittest.TestCase):
-    def test_python_runtime_runs_pytest_style_tests_without_pytest_installed(self):
+class RuntimeModuleTests(unittest.TestCase):
+    def test_python_runtime_executes_the_installed_pytest_module(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "shop").mkdir()
@@ -393,7 +393,8 @@ class DeveloperAllocationToggleTests(unittest.TestCase):
             assignment_seed=3,
         )
 
-        self.assertEqual(len(runtime_sds["dev_plan"]), 4)
+        self.assertEqual(len(runtime_sds["dev_plan"]), 3)
+        self.assertTrue(all(item["file_paths"] for item in runtime_sds["dev_plan"]))
         self.assertEqual(runtime_sds["dev_plan"][0]["developer_id"], "Dev-1")
         self.assertNotEqual(runtime_sds["dev_plan"], sds_json["dev_plan"])
         self.assertIn("runtime override: developer allocation fixed to 4 agents", runtime_sds["notes"])

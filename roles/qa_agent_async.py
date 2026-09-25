@@ -8,6 +8,7 @@ from core.text_utils import strip_code_fences
 from utils.failure_routing import build_fix_suggestions
 from utils.logger import get_logger
 from core.dependencies import resolve_file_dependencies
+from runtime_adapters.runner import command_args
 
 class QAAgentAsync:
     def __init__(self, llm, repo_manager, runtime_adapter, event_bus, sds=None):
@@ -42,6 +43,11 @@ class QAAgentAsync:
         if completed is None or not self.sds:
             return self.tests
         modules = {fs.path[:-3].replace("/", "."): fs.path for fs in self.sds.file_specs if fs.path.endswith(".py")}
+        for module, path in list(modules.items()):
+            if module.startswith("src."):
+                modules[module[4:]] = path
+            if module.endswith(".__init__"):
+                modules[module[:-9]] = path
         deps = resolve_file_dependencies(self.sds.file_specs, getattr(self.repo, "allowed_files_all", None))
         selected = {}
         for path, code in self.tests.items():
@@ -62,6 +68,12 @@ class QAAgentAsync:
                         queue.append(dep)
             if referenced and referenced.issubset(completed):
                 selected[path] = code
+        # An explicit target may refer to a test withheld from this batch. Wait
+        # until it is ready instead of running pytest against a nonexistent file.
+        for argument in command_args(self.run_command or "pytest -q"):
+            target = argument.replace("\\", "/").removeprefix("./").split("::", 1)[0]
+            if target in self.tests and target not in selected:
+                return {}
         return selected
 
     async def run_and_feedback(self, completed_files=None):
@@ -79,7 +91,10 @@ class QAAgentAsync:
         fix_suggestions = [fx for fx in all_suggestions if fx.get("requeue", True)]
         result["failure_diagnostics"] = all_suggestions
         result["fix_suggestions"] = fix_suggestions
-        await self.bus.emit("qa_result", result)
+        emitted = self.bus.emit("qa_result", result)
+        import inspect
+        if inspect.isawaitable(emitted):
+            await emitted
         self.log.info(f"qa_result success={result.get('success')}, fixes={len(fix_suggestions)}")
         return result
 

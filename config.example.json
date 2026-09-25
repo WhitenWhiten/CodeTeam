@@ -1,0 +1,19 @@
+{
+  "architects": 4,
+  "architect_seed": 7,
+  "max_rounds": 2,
+  "max_model_calls": 100,
+  "max_token_budget": 1000000,
+  "max_wall_clock_seconds": 600,
+  "test_timeout": 60,
+  "workspace": "./workspace",
+  "llm": {
+    "provider": "mock",
+    "model": "Qwen2.5-72B-Instruct",
+    "max_tokens": 8192,
+    "request_timeout": 60,
+    "request_retries": 2
+  },
+  "git": {"enabled": true},
+  "rag": {"enabled": false, "roles": ["architect"], "fallback_mode": "error"}
+}

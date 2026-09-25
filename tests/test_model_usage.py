@@ -4,7 +4,7 @@ import pytest
 
 from app.bootstrap import bootstrap
 from app.config import SystemConfig
-from core.contracts import BudgetExceeded, RunStatus
+from core.contracts import BudgetExceeded, RunStatus, ModelRequestTimeout
 from core.llm_openai import OpenAILLM
 from orchestrator.workflow import MultiAgentCodegenWorkflow
 
@@ -80,7 +80,7 @@ def test_request_timeout_finishes_without_background_request():
         finally:
             finished.append(True)
     model = OpenAILLM(client=client(create), request_timeout=0.01, request_retries=0)
-    with pytest.raises(TimeoutError):
+    with pytest.raises(ModelRequestTimeout):
         asyncio.run(model.text("task"))
     assert finished and model.usage.reserved_tokens == 0
 

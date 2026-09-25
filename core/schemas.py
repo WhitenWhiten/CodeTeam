@@ -341,6 +341,8 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
             seen.add(path)
         raise ValueError(f"duplicate files in repo_structure: {duplicates}")
     repo_files = set(repo_file_list)
+    if len({path.casefold() for path in repo_file_list}) != len(repo_file_list):
+        raise ValueError("case-insensitive file collisions are not portable across supported hosts")
 
     # Files covered by file_specs must exist in repo_structure.
     spec_paths = [fs["path"] for fs in sds_json["file_specs"]]

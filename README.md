@@ -39,68 +39,34 @@ When retrieval is enabled, architects are additionally grounded with design-orie
 
 ## 🚀 Quick Start
 
-### 1. Clone the repository
+The framework requires **Python 3.11+**. Install from this directory:
 
-```bash
-git clone https://github.com/WhitenWhiten/CodeTeam
-cd CodeTeam
-```
+~~~bash
+python -m pip install -e .
+python -m app.main --config config.example.json
+~~~
 
-### 2. Create the environment
+The default mock provider generates a deterministic online-shop example for
+workflow checks. For actual requirements, configure a supported model and endpoint,
+set OPENAI_API_KEY, and run:
 
-```bash
-conda create -n codeteam python=3.11 -y
-conda activate codeteam
-pip install -r requirements.txt
-```
+~~~bash
+codeteam --config my-config.json --requirements-file project-requirements.md
+~~~
 
-For the paper-aligned vector RAG path, install the optional retrieval stack as well:
+Both CLI entrypoints use one engine and return a structured JSON result. Exit 0
+requires final pytest success. Unique run records contain the selected design,
+model calls, QA test bundle, usage counters and a recoverable checkpoint.
 
-```bash
-pip install -r requirements-rag.txt
-```
+~~~bash
+codeteam --resume ./workspace/run_artifacts/run-... --max-calls 150
+python -m pytest -q
+python scripts/check_install.py
+~~~
 
-On platforms where `faiss-cpu` is not available from pip, install FAISS from your Python distribution and keep `sentence-transformers` installed. For a lightweight local smoke run without vector dependencies, set `CODETEAM_RAG_BACKEND=lexical`.
-
-### 3. Prepare configuration
-
-Set up the required model, runtime, and workflow-related configurations according to your local environment.
-If your project uses retrieval, make sure the retrieval corpus and related paths are configured properly before running the pipeline.
-
-For OpenAI-compatible providers, configure the provider, model, compatible endpoint, and API key through environment variables:
-
-```bash
-export CODETEAM_LLM_PROVIDER=openai
-export CODETEAM_LLM_MODEL=<model-name>
-export CODETEAM_LLM_BASE_URL=<compatible-api-base-url>
-export OPENAI_API_KEY=<api-key>
-```
-
-`OPENAI_BASE_URL` is also accepted as a fallback when `CODETEAM_LLM_BASE_URL` is not set.
-
-### 4. Run CodeTeam
-
-Use the module entrypoint from the repository root to start a repository-generation run:
-
-```bash
-python -m app.main
-```
-
-The script path also works for local runs:
-
-```bash
-python app/main.py
-```
-
-### 5. Inspect generated repositories
-
-Generated repositories are written to the workspace directory after execution:
-
-```bash
-ls workspace/
-```
-
-You can then run the generated project, inspect intermediate artifacts, or execute the repository test workflow for further evaluation.
+See [the runtime guide](docs/runtime-guide.md) for configuration precedence,
+budgets, Git semantics, RAG setup, recovery and verification boundaries.
+The optional vector stack installs with python -m pip install -e ".[rag]".
 
 ## ⚙️ CodeTeam Workflow
 
@@ -128,7 +94,7 @@ In this project, NL2Repo-Bench is used as an external validation benchmark for R
 
 The ablation study is designed to isolate the contribution of the main workflow components of CodeTeam under the prompting-based setting. All ablations keep the same backbone model, decoding configuration, budgets, and overall workflow wherever possible.
 
-The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. Three ablation variants are considered in the paper. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed four-developer round-robin assignment. The third removes Git-based coordination by disabling the branch-based workflow and structured update messages, so agents can no longer rely on commit-based interface briefs.
+The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. Three ablation variants are considered in the paper. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed four-developer round-robin assignment. The paper also describes an ablation without Git-based coordination. In the current runtime, disabling Git removes branches and commits while retaining in-memory interface briefs and structured update reasons; this flag alone does not reproduce removal of all coordination information.
 
 These ablations are mainly evaluated on SketchEval. In addition to end-to-end SketchBLEU, the study also examines planning-stage and coordination-stage diagnostics, such as SDS parse success, structural validity, plan diversity, QA rounds, interface-mismatch failures, and average context size.
 

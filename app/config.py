@@ -61,6 +61,7 @@ class SystemConfig(ConfigModel):
     max_token_budget: Optional[int] = Field(default=None, ge=0)
     max_model_calls: Optional[int] = Field(default=None, ge=0)
     test_timeout: float = Field(default=120, gt=0)
+    python_executable: Optional[str] = None
     workspace: str = './workspace'
     allow_languages: List[str] = ['python']
     user_question: str = 'Build a simplified online shop program with catalog browsing, adding items to a cart, and calculating the checkout total.'
@@ -85,7 +86,7 @@ ENV_PATHS = {
     'ARCHITECTS': 'architects', 'ARCHITECT_SEED': 'architect_seed', 'SDS_RETRY': 'sds_retry',
     'MAX_QA_ROUNDS': 'max_rounds', 'MAX_WALL_CLOCK_SECONDS': 'max_wall_clock_seconds',
     'MAX_TOKEN_BUDGET': 'max_token_budget', 'MAX_MODEL_CALLS': 'max_model_calls',
-    'TEST_TIMEOUT': 'test_timeout', 'ASYNC_MODE': 'async_mode',
+    'TEST_TIMEOUT': 'test_timeout', 'PYTHON_EXECUTABLE': 'python_executable', 'ASYNC_MODE': 'async_mode',
     'RAG_ENABLED': 'rag.enabled', 'RAG_CORPUS': 'rag.corpus_file', 'RAG_INDEX_DIR': 'rag.index_dir',
     'RAG_TOP_K': 'rag.top_k', 'RAG_DISTINCT_SOURCES': 'rag.distinct_sources',
     'RAG_SIMILARITY_THRESHOLD': 'rag.similarity_threshold', 'RAG_EMBEDDING_MODEL': 'rag.embedding_model',

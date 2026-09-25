@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os, json, asyncio
 from core.model_usage import UsageLedger, MeteredModel
+from core.contracts import ModelRequestTimeout
 from typing import Any, Dict, Optional
 try:
     import jsonschema
@@ -80,6 +81,8 @@ class OpenAILLM(MeteredModel):
                 status = getattr(exc, "status_code", None)
                 transient = isinstance(exc, (TimeoutError, ConnectionError)) or type(exc).__name__ in {"APIConnectionError", "APITimeoutError"} or status in {408, 409, 429} or isinstance(status, int) and status >= 500
                 if not transient or attempt == self.request_retries:
+                    if isinstance(exc, TimeoutError):
+                        raise ModelRequestTimeout("Model request timeout exhausted") from exc
                     raise
                 await asyncio.sleep(min(0.5 * 2 ** attempt, 4))
                 continue

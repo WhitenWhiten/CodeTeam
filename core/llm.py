@@ -5,7 +5,7 @@ from typing import Any, Dict
 class LLMClient:
     def __init__(self, cfg):
         self.cfg = cfg
-        provider = getattr(cfg, "provider", "mock")
+        provider = getattr(cfg, "provider", "mock").lower()
         self._mode = "mock" if provider == "mock" else getattr(cfg, "model", "mock")
 
     async def text(self, prompt: str) -> str:

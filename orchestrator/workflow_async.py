@@ -4,6 +4,7 @@ import asyncio
 import time
 import hashlib
 import json
+from jsonschema import ValidationError
 from typing import Dict, Any, List, Set, Mapping
 from pathlib import Path
 from core.ast_utils import to_brief
@@ -67,6 +68,8 @@ class MultiAgentCodegenWorkflowAsync:
         try:
             if artifacts:
                 artifacts.acquire()
+                if artifacts.root and (artifacts.root / "checkpoint.json").exists() and not getattr(self.ctx.cfg, "resume_from", None):
+                    raise ValueError("Run directory already contains a checkpoint; create a new context or explicitly resume")
             self._restored = self._restore_checkpoint(question) if getattr(self.ctx.cfg, "resume_from", None) else None
             self._recording = True
             if artifacts:
@@ -138,7 +141,7 @@ class MultiAgentCodegenWorkflowAsync:
 
     def _config_identity(self):
         cfg = self.ctx.cfg.model_dump()
-        return {key: cfg[key] for key in ("llm", "rag", "git", "developer_allocation", "allow_languages")}
+        return {key: cfg[key] for key in ("llm", "rag", "git", "developer_allocation", "allow_languages", "python_executable")}
 
     def _save_checkpoint(self):
         if self._chosen_sds is None or not self._checkpoint_ready:
@@ -222,7 +225,8 @@ class MultiAgentCodegenWorkflowAsync:
                     return trace
                 except BudgetExceeded:
                     raise
-                except Exception:
+                except (ValueError, TypeError, ValidationError) as exc:
+                    self.log.warning("Invalid SDS candidate: %s", exc)
                     continue
             raise RuntimeError("SDS generation failed")
 
@@ -320,7 +324,7 @@ class MultiAgentCodegenWorkflowAsync:
             scheduler.restore_completed(self._restored["completed"])
         self._checkpoint_ready = True
 
-        qa = QAAgentAsync(self.ctx.llm, repo, PythonRuntimeAsync(timeout=self.ctx.cfg.test_timeout), bus, sds=sds)
+        qa = QAAgentAsync(self.ctx.llm, repo, PythonRuntimeAsync(python_executable=self.ctx.cfg.python_executable, timeout=self.ctx.cfg.test_timeout), bus, sds=sds)
         self._qa = qa
         with StageTimer(self.log, "qa_init_tests"):
             if self._restored and self._restored.get("qa_bundle"):

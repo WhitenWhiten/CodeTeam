@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 workspace/repo-*/
 workspace/run_artifacts/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+.venv/
