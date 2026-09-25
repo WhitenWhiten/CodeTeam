@@ -1,5 +1,6 @@
 # actions/generate_tests.py
 from __future__ import annotations
+from core.mechanism_state import count
 import json
 from pathlib import Path
 try:
@@ -63,6 +64,7 @@ class GenerateTestsAction(Action):
         self.attempts = []
         first_tests = None
         for attempt in range(3):
+            count(llm, "qa_test_repairs" if attempt else "qa_test_generations", attempt=attempt)
             with model_call_context(role='QA', agent_id='QA', stage='qa_test_repair' if attempt else 'qa_test_generation'):
                 bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
             try:

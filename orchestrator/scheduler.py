@@ -47,7 +47,8 @@ class DependencyScheduler:
     package or undeclared resource and is ignored for scheduling.
     """
 
-    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None):
+    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None, state=None):
+        self.state = state
         if dev_plan is None and hasattr(sds_or_file_specs, "file_specs"):
             file_specs = list(sds_or_file_specs.file_specs)
             dev_plan = list(getattr(sds_or_file_specs, "dev_plan", []))
@@ -199,7 +200,7 @@ class DependencyScheduler:
         del self.running[path]
         self.completed.add(path)
 
-    def requeue_files(self, file_paths: Iterable[str]) -> List[str]:
+    def requeue_files(self, file_paths: Iterable[str], reason="qa_repair") -> List[str]:
         requeued: List[str] = []
         seen: Set[str] = set()
         for file_path in file_paths:
@@ -212,6 +213,7 @@ class DependencyScheduler:
             if path in self.running:
                 raise SchedulerError(f"cannot requeue running file: {path}")
             if path not in self.pending:
+                if self.state: self.state.requeue(path, reason)
                 self.completed.discard(path)
                 self.pending.add(path)
             requeued.append(path)

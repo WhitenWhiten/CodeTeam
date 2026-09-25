@@ -1,5 +1,6 @@
 # actions/select_sds.py
 from __future__ import annotations
+from core.mechanism_state import count
 import json
 from pathlib import Path
 from typing import List, Dict, Any
@@ -67,6 +68,7 @@ class SelectSDSAction(Action):
         prompt = self._build_prompt(question, sds_list, rag_client)
         attempts = []
         for attempt in range(3):
+            count(self.llm, "cto_attempts", retry=attempt)
             result = await self.llm.structured_json(prompt, schema="CTO_DECISION")
             try:
                 ranked = rank_candidates(result, candidates)

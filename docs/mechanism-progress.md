@@ -14,7 +14,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M09: Durable interface communication
 - [x] M10: Bounded context and briefing
 - [x] M11: Planning diversity
-- [ ] M12: Closed resource state
+- [x] M12: Closed resource state
 - [ ] M13: Workload-aware allocation
 - [ ] M14: Retrieval information contracts
 - [ ] M15: Requirement traceability
@@ -48,3 +48,7 @@ M09: Persisted replayable publish/consume journal, commit/source/API/parent iden
 M10: Added deterministic UTF-8 context caps, omission receipts and complete-target-or-fail policy; up to two explicit interface-only requests; SDS-sourced invariants reach prompts and published briefs. Batch C pending.
 
 M11: Recorded file/API/module similarities and rename-independent topology summaries; explicit keep/reject/bounded-retry policy handles duplicates. Generic src/tests directories do not establish diversity. Default keeps and reports duplicates. Batch C pending.
+
+M12: Durable counters now distinguish planning, generation retries, briefing, QA tests and interface requeues; per-file caps stop drift, resume preserves state, failed/budget-stopped outputs list pending and unverified files. Uncapped QA requires a global ceiling. Batch C pending.
+
+Batch C: 26 passed; one regression exposed an unsafe source field in the public summary allowlist. Renamed provenance to origin and removed source from the allowlist; focused recheck follows.

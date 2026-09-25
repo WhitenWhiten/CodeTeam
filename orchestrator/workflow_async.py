@@ -8,6 +8,7 @@ from jsonschema import ValidationError
 from typing import Dict, Any, List, Set, Mapping
 from pathlib import Path
 from core.ast_utils import to_brief
+from core.mechanism_state import MechanismState, count
 from core.schemas import validate_qa_test_bundle
 from roles.architect_agent import ArchitectAgent
 from roles.cto_agent import CTOAgent
@@ -90,6 +91,8 @@ class MultiAgentCodegenWorkflowAsync:
                 if artifacts.root and (artifacts.root / "checkpoint.json").exists() and not getattr(self.ctx.cfg, "resume_from", None):
                     raise ValueError("Run directory already contains a checkpoint; create a new context or explicitly resume")
             self._restored = self._restore_checkpoint(question) if getattr(self.ctx.cfg, "resume_from", None) else None
+            self._mechanism_state = MechanismState(artifacts, resume=bool(self._restored), max_file_requeues=self.ctx.cfg.max_file_requeues)
+            self.ctx.llm.mechanism_state = self._mechanism_state
             self._recording = True
             self._persist_time()
             heartbeat = asyncio.create_task(self._time_heartbeat())
@@ -143,6 +146,10 @@ class MultiAgentCodegenWorkflowAsync:
                     self.result.usage = usage.snapshot()
                 if self._recording:
                     self._persist_time(closed=True)
+                    self.result.mechanisms = self._mechanism_state.snapshot()
+                    self.result.incomplete = {"pending_files": sorted(self._scheduler.pending | set(self._scheduler.running)) if self._scheduler else [],
+                        "awaiting_full_verification": sorted(self._scheduler.completed) if self._scheduler and not self.result.success else [],
+                        "reason": self.result.reason if not self.result.success else ""}
                     self._save_checkpoint()
                     self._artifact_json("repository/final.json", to_jsonable(self.result))
                     rag = getattr(self.ctx, "rag", None)
@@ -167,7 +174,7 @@ class MultiAgentCodegenWorkflowAsync:
 
     def _config_identity(self):
         cfg = self.ctx.cfg.model_dump()
-        return {key: cfg[key] for key in ("llm", "rag", "git", "developer_allocation", "allow_languages", "python_executable")}
+        return {key: cfg[key] for key in ("llm", "rag", "git", "developer_allocation", "allow_languages", "python_executable", "context", "architects", "architect_seed", "sds_retry", "min_valid_candidates", "duplicate_candidate_policy", "diversity_similarity_threshold", "max_file_requeues")}
 
     def _save_checkpoint(self):
         if self._chosen_sds is None or not self._checkpoint_ready:
@@ -185,6 +192,7 @@ class MultiAgentCodegenWorkflowAsync:
             "repo_root": self.result.repo_root, "file_hashes": hashes, "qa_bundle": bundle,
             "completed": sorted(self._scheduler.completed) if self._scheduler else [],
             "pending_payloads": self._pending_payloads,
+            "mechanism_state": self._mechanism_state.snapshot() if hasattr(self, "_mechanism_state") else {},
             "briefs": {path: self._brief_mgr.get_brief(path) for path in self._brief_mgr.list_available()} if self._brief_mgr else {},
             "repairs": self.result.repairs, "verification_count": self._verification_count,
             "failed_states": sorted(self._failed_states), "qa_history": qa.history if qa else [], "stage": self.result.stage})
@@ -251,6 +259,7 @@ class MultiAgentCodegenWorkflowAsync:
             arch = ArchitectAgent(name=profile.name, llm=self.ctx.llm, rag=rag_client)
             for attempt in range(self.ctx.cfg.sds_retry + 1):
                 self._check_resource_limits()
+                count(self.ctx.llm, "architect_attempts", architect=profile.name, retry=attempt)
                 record = {"architect": profile.name, "attempt": attempt + 1,
                           "design_preference": profile.preference, "claimed_summary": claimed_summary}
                 try:
@@ -350,14 +359,14 @@ class MultiAgentCodegenWorkflowAsync:
         for path in allowed_all:
             if path.endswith(".py") and repo.is_file(path) and brief_mgr.get_brief(path) is None:
                 try:
-                    brief_mgr.update_brief(path, dict(to_brief(repo.read_file(path)), source="initial_repository", source_hash=hashlib.sha256(repo.read_bytes(path)).hexdigest()))
+                    brief_mgr.update_brief(path, dict(to_brief(repo.read_file(path)), origin="initial_repository", source_hash=hashlib.sha256(repo.read_bytes(path)).hexdigest()))
                 except SyntaxError:
                     pass
         if self._restored:
             for path, brief in self._restored.get("briefs", {}).items():
                 brief_mgr.update_brief(path, brief)
         bus = AsyncEventBus()
-        scheduler = DependencyScheduler(sds)
+        scheduler = DependencyScheduler(sds, state=self._mechanism_state)
         self._scheduler = scheduler
         if self._restored:
             scheduler.restore_completed(self._restored["completed"])
@@ -429,6 +438,7 @@ class MultiAgentCodegenWorkflowAsync:
         result["scope"] = "batch" if partial else "full"
         self._artifact_json(f"qa/round_{self._verification_count}.json", result)
         self._verification_count += 1
+        count(self.ctx.llm, "qa_executions", scope=result["scope"], test_version=result["test_version"], success=result.get("success", False))
         if result.get("status") == "deferred" and partial:
             return []
         self.result.qa = result
@@ -441,7 +451,7 @@ class MultiAgentCodegenWorkflowAsync:
         fingerprint = digest.hexdigest()
         if fingerprint in self._failed_states:
             raise ValidationStopped("Repair made no progress: unchanged sources and repeated failures")
-        if self.result.repairs >= self.ctx.cfg.max_rounds:
+        if self.ctx.cfg.max_rounds is not None and self.result.repairs >= self.ctx.cfg.max_rounds:
             raise ValidationStopped("Repair limit reached; final validation still fails")
         fixes = result.get("fix_suggestions", [])
         if not fixes:
@@ -507,7 +517,8 @@ class MultiAgentCodegenWorkflowAsync:
             accepted = set(scheduler.completed)
             for path, reason in changed:
                 stale = set(scheduler.transitive_dependents(path)) & accepted
-                scheduler.requeue_files(stale)
+                scheduler.requeue_files(stale, reason="interface_change")
+                for dependent in stale: count(self.ctx.llm, "interface_requeues", file_path=dependent, upstream=path, interface_version=reason.get("interface_version"))
                 for dependent in stale:
                     merge_repair_payload(payloads, dependent, {"upstream_file": path, "reason": "Accepted upstream interface changed",
                         "interface_version": reason.get("interface_version"), "previous_interface_version": reason.get("previous_interface_version")})

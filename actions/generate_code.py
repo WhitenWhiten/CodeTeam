@@ -1,5 +1,6 @@
 # actions/generate_code.py
 from __future__ import annotations
+from core.mechanism_state import count
 from pathlib import Path
 import json
 import hashlib
@@ -224,6 +225,7 @@ class GenerateCodeAction(Action):
         config = getattr(self, "context_config", None)
         request_count = 0
         for attempt in range(3):
+            count(llm, "code_generation_attempts", file_path=path, validation_retry=attempt)
             while True:
                 builder = lambda b, i: self._build_prompt(file_spec, b, i, current) + '\nYou may request one extra interface using JSON {"request_brief":"relative/path.py"}. Maximum two requests per task; never request source. Otherwise return complete target code.'
                 try:
@@ -240,6 +242,7 @@ class GenerateCodeAction(Action):
                     code = strip_code_fences(raw)
                     break
                 request_count += 1
+                count(llm, "brief_requests", file_path=path, request=request_count)
                 target = action.get("request_brief")
                 allowed = isinstance(target, str) and target != path and target in getattr(self, "repo_files", [])
                 if request_count > getattr(config, "max_brief_requests", 2):

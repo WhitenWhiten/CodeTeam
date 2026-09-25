@@ -45,7 +45,7 @@ class BriefManager:
         if entry is None:
             return None
         allowed = {
-            "source", "constants", "attributes", "reexports", "imports", "interface_version",
+            "origin", "constants", "attributes", "reexports", "imports", "interface_version",
             "parent_interface_version", "source_hash", "commit_sha", "publication_id", "invariant_sources",
             "functions",
             "classes",

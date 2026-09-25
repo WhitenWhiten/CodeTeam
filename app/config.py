@@ -67,7 +67,8 @@ class SystemConfig(ConfigModel):
     min_valid_candidates: int = Field(default=1, ge=1)
     duplicate_candidate_policy: Literal["keep", "reject", "retry"] = "keep"
     diversity_similarity_threshold: float = Field(default=0.98, gt=0, le=1)
-    max_rounds: int = Field(default=2, ge=0)
+    max_rounds: Optional[int] = Field(default=2, ge=0)
+    max_file_requeues: int = Field(default=8, ge=0)
     max_wall_clock_seconds: Optional[float] = Field(default=None, gt=0)
     max_token_budget: Optional[int] = Field(default=None, ge=0)
     max_model_calls: Optional[int] = Field(default=None, ge=0)
@@ -86,6 +87,12 @@ class SystemConfig(ConfigModel):
     rag: RAGConfig = Field(default_factory=RAGConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     developer_allocation: DeveloperAllocationConfig = Field(default_factory=DeveloperAllocationConfig)
+
+    @model_validator(mode="after")
+    def bounded_unlimited_qa(self):
+        if self.max_rounds is None and all(v is None for v in (self.max_wall_clock_seconds, self.max_token_budget, self.max_model_calls)):
+            raise ValueError("Uncapped QA rounds require a global time, token or call limit")
+        return self
 
 
 ENV_PATHS = {

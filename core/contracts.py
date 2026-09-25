@@ -86,6 +86,8 @@ class RunResult:
     repairs: int = 0
     usage: dict[str, Any] = field(default_factory=dict)
     timing: dict[str, Any] = field(default_factory=dict)
+    mechanisms: dict[str, Any] = field(default_factory=dict)
+    incomplete: dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
