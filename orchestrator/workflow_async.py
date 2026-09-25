@@ -179,7 +179,7 @@ class MultiAgentCodegenWorkflowAsync:
         if self._repo:
             hashes = {path: hashlib.sha256(self._repo.read_bytes(path)).hexdigest() if self._repo.is_file(path) else None for path in sorted(self._repo.allowed_files_all)}
         qa = self._qa
-        bundle = {"tests": qa.tests, "run_command": qa.run_command, "setup_commands": qa.setup_commands} if qa and qa.tests else None
+        bundle = qa.bundle() if qa and qa.tests else None
         artifacts.write_json("checkpoint.json", {"version": 1, "artifacts_dir": str(artifacts.root),
             "question": self._question, "config_identity": self._config_identity(), "chosen_sds": self._chosen_sds,
             "repo_root": self.result.repo_root, "file_hashes": hashes, "qa_bundle": bundle,
@@ -187,7 +187,7 @@ class MultiAgentCodegenWorkflowAsync:
             "pending_payloads": self._pending_payloads,
             "briefs": {path: self._brief_mgr.get_brief(path) for path in self._brief_mgr.list_available()} if self._brief_mgr else {},
             "repairs": self.result.repairs, "verification_count": self._verification_count,
-            "failed_states": sorted(self._failed_states), "stage": self.result.stage})
+            "failed_states": sorted(self._failed_states), "qa_history": qa.history if qa else [], "stage": self.result.stage})
 
     def _restore_checkpoint(self, question):
         artifacts = self.ctx.artifacts
@@ -357,12 +357,13 @@ class MultiAgentCodegenWorkflowAsync:
             scheduler.restore_completed(self._restored["completed"])
         self._checkpoint_ready = True
 
-        qa = QAAgentAsync(self.ctx.llm, repo, PythonRuntimeAsync(python_executable=self.ctx.cfg.python_executable, timeout=self.ctx.cfg.test_timeout), bus, sds=sds)
+        qa = QAAgentAsync(self.ctx.llm, repo, PythonRuntimeAsync(python_executable=self.ctx.cfg.python_executable, timeout=self.ctx.cfg.test_timeout), bus, sds=sds, requirements=question, artifacts=self.ctx.artifacts)
         self._qa = qa
+        qa._sds_json = chosen_sds
         with StageTimer(self.log, "qa_init_tests"):
             if self._restored and self._restored.get("qa_bundle"):
                 bundle = self._restored["qa_bundle"]
-                qa.tests, qa.run_command, qa.setup_commands = bundle["tests"], bundle["run_command"], bundle["setup_commands"]
+                qa.restore(bundle, self._restored.get("qa_history", []))
             else:
                 await qa.init_tests(chosen_sds)
             self._artifact_json("qa/test_bundle.json", {"tests": qa.tests, "run_command": qa.run_command, "setup_commands": qa.setup_commands})
@@ -415,7 +416,10 @@ class MultiAgentCodegenWorkflowAsync:
     async def _verify(self, qa, scheduler, partial=False):
         self._check_resource_limits()
         self._set_stage("validation")
+        if self._repo and scheduler.completed:
+            await qa.refresh_tests(scheduler.completed, {p: self._brief_mgr.get_brief(p) for p in scheduler.completed}, phase="batch" if partial else "full")
         result = await qa.run_and_feedback(completed_files=scheduler.completed if partial else None)
+        result["test_version"] = len(qa.history) - 1
         result["scope"] = "batch" if partial else "full"
         self._artifact_json(f"qa/round_{self._verification_count}.json", result)
         self._verification_count += 1

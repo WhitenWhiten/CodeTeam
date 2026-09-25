@@ -172,6 +172,8 @@ QA_TEST_BUNDLE_SCHEMA: Dict[str, Any] = {
       "additionalProperties": {"type": "string"}
     },
     "run_command": {"type": "string", "minLength": 1},
+    "test_dependencies": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "fixture_dependencies": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
     "setup_commands": {
       "type": "array",
       "items": {"type": "string"},

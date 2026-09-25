@@ -18,3 +18,9 @@ Run-strategy requirements:
 
 Input SDS:
 {sds_json}
+
+Progressive QA protocol:
+- QA_CONTEXT_JSON contains original normalized requirements, current batch, phase and accepted interface versions. Verify the original requirements as well as the SDS.
+- At each new implementation snapshot propose incremental tests; retain existing regressions. Do not weaken an earlier assertion to make an implementation pass.
+- Optional test_dependencies maps test paths to required source paths; fixture_dependencies maps test paths to required bundled support/fixture files. Include required conftest.py files.
+- Only generate tests against the declared source interfaces. No hidden reference tests are supplied.

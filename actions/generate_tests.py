@@ -52,13 +52,28 @@ class GenerateTestsAction(Action):
             return p.read_text(encoding="utf-8")
         return QA_PROMPT_FALLBACK
 
-    def _build_prompt(self, sds: dict) -> str:
+    def _build_prompt(self, sds: dict, context=None) -> str:
         tpl = self._load_prompt_template()
-        return tpl.format(sds_json=json.dumps(sds, ensure_ascii=False, indent=2))
+        return tpl.format(sds_json=json.dumps(sds, ensure_ascii=False, indent=2)) + "\nQA_CONTEXT_JSON\n" + json.dumps(context or {}, ensure_ascii=False, indent=2)
 
-    async def run(self, sds, llm):
-        prompt = self._build_prompt(sds)
-        with model_call_context(role='QA', agent_id='QA', stage='qa_test_generation'):
-            bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
-        validate_qa_test_bundle(bundle)
-        return bundle
+    async def run(self, sds, llm, context=None):
+        from core.qa_contracts import validate_test_sources, assert_preserves_tests
+        from core.text_utils import strip_code_fences
+        prompt = self._build_prompt(sds, context)
+        self.attempts = []
+        first_tests = None
+        for attempt in range(3):
+            with model_call_context(role='QA', agent_id='QA', stage='qa_test_repair' if attempt else 'qa_test_generation'):
+                bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
+            try:
+                validate_qa_test_bundle(bundle)
+                bundle["tests"] = {p: strip_code_fences(c) for p, c in bundle["tests"].items()}
+                if first_tests is not None: assert_preserves_tests(first_tests, bundle["tests"])
+                validate_test_sources(bundle, sds)
+                self.attempts.append({"attempt": attempt, "status": "accepted", "bundle": bundle})
+                return bundle
+            except (SyntaxError, ValueError, __import__('jsonschema').ValidationError) as exc:
+                self.attempts.append({"attempt": attempt, "status": "rejected", "error": str(exc), "bundle": bundle})
+                if first_tests is None and isinstance(bundle.get("tests"), dict): first_tests = dict(bundle["tests"])
+                if attempt == 2: raise ValueError(f"QA test-source repair exhausted: {exc}") from exc
+                prompt += "\nRepair only test syntax/import defects. Preserve test functions and assertions; do not skip tests.\n" + str(exc) + "\nPrevious bundle: " + json.dumps(bundle)
