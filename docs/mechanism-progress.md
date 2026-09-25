@@ -13,7 +13,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M08: Minimal invalidation
 - [x] M09: Durable interface communication
 - [x] M10: Bounded context and briefing
-- [ ] M11: Planning diversity
+- [x] M11: Planning diversity
 - [ ] M12: Closed resource state
 - [ ] M13: Workload-aware allocation
 - [ ] M14: Retrieval information contracts
@@ -46,3 +46,5 @@ Batch B: 36 passed (planning, progressive QA, evidence routing, minimal invalida
 M09: Persisted replayable publish/consume journal, commit/source/API/parent identities and pre-write stale-dependency rejection with bounded recollection. Shared-worktree writes remain serialized. Batch C pending.
 
 M10: Added deterministic UTF-8 context caps, omission receipts and complete-target-or-fail policy; up to two explicit interface-only requests; SDS-sourced invariants reach prompts and published briefs. Batch C pending.
+
+M11: Recorded file/API/module similarities and rename-independent topology summaries; explicit keep/reject/bounded-retry policy handles duplicates. Generic src/tests directories do not establish diversity. Default keeps and reports duplicates. Batch C pending.

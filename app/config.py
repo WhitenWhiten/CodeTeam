@@ -65,6 +65,8 @@ class SystemConfig(ConfigModel):
     architect_seed: Optional[int] = None
     sds_retry: int = Field(default=1, ge=0)
     min_valid_candidates: int = Field(default=1, ge=1)
+    duplicate_candidate_policy: Literal["keep", "reject", "retry"] = "keep"
+    diversity_similarity_threshold: float = Field(default=0.98, gt=0, le=1)
     max_rounds: int = Field(default=2, ge=0)
     max_wall_clock_seconds: Optional[float] = Field(default=None, gt=0)
     max_token_budget: Optional[int] = Field(default=None, ge=0)

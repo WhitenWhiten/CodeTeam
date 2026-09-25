@@ -25,7 +25,7 @@ from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime_async import PythonRuntimeAsync
 from utils.logger import get_logger, StageTimer
 from orchestrator.scheduler import merge_repair_payload, DependencyScheduler
-from orchestrator.architect_diversity import build_architect_profiles, update_claimed_summary
+from orchestrator.architect_diversity import build_architect_profiles, update_claimed_summary, compare_designs
 
 class MultiAgentCodegenWorkflowAsync:
     def __init__(self, ctx):
@@ -258,7 +258,12 @@ class MultiAgentCodegenWorkflowAsync:
                                                    claimed_summary=claimed_summary, return_trace=True)
                     normalized = normalize_sds_candidate(trace["sds"])
                     validate_sds(normalized)
-                    record.update(status="accepted", parsed=trace["sds"], normalized=normalized)
+                    diversity = compare_designs(normalized, sds_list, self.ctx.cfg.diversity_similarity_threshold)
+                    policy = self.ctx.cfg.duplicate_candidate_policy
+                    record.update(parsed=trace["sds"], normalized=normalized, diversity=diversity, duplicate_policy=policy)
+                    if diversity["duplicate"] and policy != "keep":
+                        raise ValueError("Duplicate architecture under declared " + policy + " policy")
+                    record.update(status="accepted")
                     sds_list.append(normalized)
                     traces.append({**record, "candidate_id": f"candidate-{len(sds_list)-1:04d}",
                                    "rag_docs": trace.get("rag_docs", []), "sds": normalized})
@@ -274,6 +279,7 @@ class MultiAgentCodegenWorkflowAsync:
                     self._artifact_json("planning/candidate_attempts.json", attempts)
                     self._artifact_json("planning/architect_candidates.json", traces)
                 if record["status"] == "accepted": break
+                if record.get("diversity", {}).get("duplicate") and record.get("duplicate_policy") == "reject": break
         minimum = getattr(self.ctx.cfg, "min_valid_candidates", 1)
         if len(sds_list) < minimum:
             raise ValueError(f"Insufficient valid SDS candidates: {len(sds_list)} < {minimum}")
