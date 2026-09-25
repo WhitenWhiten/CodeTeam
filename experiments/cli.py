@@ -6,6 +6,7 @@ import sys
 from experiments.protocol import make_plan
 from experiments.runner import run_experiment
 from experiments.evaluation import evaluate
+from experiments.costs import cost_report
 
 def main(argv=None):
     cli = argparse.ArgumentParser(description='Plan and execute reproducible CodeTeam experiments')
@@ -15,9 +16,15 @@ def main(argv=None):
         p.add_argument('manifest')
         if name != 'plan':
             p.add_argument('--resume', action='store_true')
+    costs = sub.add_parser('costs')
+    costs.add_argument('experiment_dir')
+    costs.add_argument('--input-usd-per-million', type=float)
+    costs.add_argument('--output-usd-per-million', type=float)
     args = cli.parse_args(argv)
     try:
-        if args.command == 'plan':
+        if args.command == 'costs':
+            result = cost_report(args.experiment_dir, args.input_usd_per_million, args.output_usd_per_million)
+        elif args.command == 'plan':
             result = make_plan(args.manifest)
         else:
             runner = run_experiment if args.command == 'run' else evaluate

@@ -32,6 +32,8 @@ class MultiAgentCodegenWorkflowAsync:
         self.ctx = ctx
         self.log = get_logger("workflow")
         self._started_at = time.monotonic()
+        self._elapsed_before = getattr(ctx, 'prior_elapsed_seconds', 0.0)
+        self._time_uncertain = getattr(ctx, 'prior_time_uncertain', False)
         self._running = False
         self._dev_tasks = []
         self.result = None
@@ -44,12 +46,29 @@ class MultiAgentCodegenWorkflowAsync:
         artifacts = getattr(self.ctx, "artifacts", None)
         if artifacts:
             artifacts.event("stage", stage=stage)
+        if getattr(self, '_recording', False):
+            self._persist_time()
+
+    def _persist_time(self, closed=False):
+        timing = {'elapsed_seconds': self._elapsed_before + time.monotonic() - self._started_at,
+                  'recorded_at_unix': time.time(), 'closed': closed,
+                  'conservative_recovery': self._time_uncertain}
+        self.result.timing = timing
+        self._artifact_json('time_usage.json', timing)
+
+    async def _time_heartbeat(self):
+        while True:
+            await asyncio.sleep(1)
+            self._persist_time()
 
     async def run(self, question: str) -> RunResult:
         if self._running:
             raise RuntimeError("A workflow instance cannot run concurrently")
         self._running = True
         self._started_at = time.monotonic()
+        self._elapsed_before = getattr(self.ctx, 'prior_elapsed_seconds', 0.0)
+        self._time_uncertain = getattr(self.ctx, 'prior_time_uncertain', False)
+        heartbeat = None
         self._dev_tasks = []
         self._repo = None
         self._verification_count = 0
@@ -72,6 +91,8 @@ class MultiAgentCodegenWorkflowAsync:
                     raise ValueError("Run directory already contains a checkpoint; create a new context or explicitly resume")
             self._restored = self._restore_checkpoint(question) if getattr(self.ctx.cfg, "resume_from", None) else None
             self._recording = True
+            self._persist_time()
+            heartbeat = asyncio.create_task(self._time_heartbeat())
             if artifacts:
                 artifacts.event("resume" if self._restored else "start")
                 cfg_dict = self.ctx.cfg.model_dump() if hasattr(self.ctx.cfg, "model_dump") else {}
@@ -81,7 +102,8 @@ class MultiAgentCodegenWorkflowAsync:
                 usage.state_recorder = lambda state: artifacts.write_json("model_usage.json", state)
                 usage.recorder = self._record_model_call
             limit = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)
-            async with asyncio.timeout(limit):
+            remaining = max(0, limit - self._elapsed_before) if limit is not None else None
+            async with asyncio.timeout(remaining):
                 await self._execute(question)
             self.result.status = (RunStatus.SUCCESS if self.result.qa and self.result.qa.get("success")
                                   else RunStatus.VALIDATION_FAILED)
@@ -105,6 +127,9 @@ class MultiAgentCodegenWorkflowAsync:
             self.result.reason = f"{type(exc).__name__}: {exc}"
             self.log.exception("workflow failed")
         finally:
+            if heartbeat:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
             for task in self._dev_tasks:
                 if not task.done():
                     task.cancel()
@@ -117,6 +142,7 @@ class MultiAgentCodegenWorkflowAsync:
                 if usage:
                     self.result.usage = usage.snapshot()
                 if self._recording:
+                    self._persist_time(closed=True)
                     self._save_checkpoint()
                     self._artifact_json("repository/final.json", to_jsonable(self.result))
                     rag = getattr(self.ctx, "rag", None)
@@ -135,7 +161,7 @@ class MultiAgentCodegenWorkflowAsync:
         return self.result
 
     def _record_model_call(self, record):
-        record = dict(record, stage=self.result.stage)
+        record = dict(record, stage=record.get('stage', self.result.stage))
         self._artifact_json(f"model_calls/{record['call']:06d}.json", record)
         self.ctx.artifacts.event("model_call", call=record["call"], stage=record["stage"], tokens=record["tokens"], error=record["error"])
 
@@ -191,6 +217,14 @@ class MultiAgentCodegenWorkflowAsync:
         usage_path = artifacts.root / "model_usage.json"
         if usage and usage_path.exists():
             usage.restore(artifacts.read_json("model_usage.json"))
+        timing_path = artifacts.root / 'time_usage.json'
+        if timing_path.exists():
+            timing = artifacts.read_json('time_usage.json')
+            self._elapsed_before = timing['elapsed_seconds']
+            self._time_uncertain = timing.get('conservative_recovery', False)
+            if not timing.get('closed', False):
+                self._elapsed_before += max(0, time.time() - timing['recorded_at_unix'])
+                self._time_uncertain = True
         self.result.repairs = saved["repairs"]
         self._verification_count = saved["verification_count"]
         self._failed_states = set(saved["failed_states"])
@@ -412,7 +446,7 @@ class MultiAgentCodegenWorkflowAsync:
 
     def _check_resource_limits(self) -> None:
         max_wall = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)
-        if max_wall is not None and time.monotonic() - self._started_at > max_wall:
+        if max_wall is not None and self._elapsed_before + time.monotonic() - self._started_at > max_wall:
             raise BudgetExceeded(f"CodeTeam wall-clock budget exceeded: {max_wall}s")
 
         max_tokens = getattr(self.ctx.cfg, "max_token_budget", None)

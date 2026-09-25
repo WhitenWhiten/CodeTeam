@@ -57,8 +57,9 @@ T9: Validated JSON configuration supports environment and CLI overrides. Run
 directories have exclusive process locks, atomic checkpoints, stage events, model
 request/response records, usage snapshots and persisted QA bundles. Recovery from
 the selected-design boundary verifies every source hash, restores completed work
-and pending repair context, and retains prior call/token charges. Wall time is a
-per-invocation limit. Tests cover interrupted runs, source drift and CLI recovery.
+and pending repair context, and retains prior call/token charges. The revision
+infrastructure follow-up also makes wall time cumulative across recovery.
+Tests cover interrupted runs, source drift and CLI recovery.
 
 T10: The ordinary pytest command discovers the legacy unit tests as well as new
 integration cases. Acceptance exercises class/method contracts, src layouts,

@@ -16,6 +16,7 @@ except ImportError:
             return await action.run(**kwargs)
 
 from actions.select_sds import SelectSDSAction
+from core.call_context import model_call_context
 
 class CTOAgent(Role):
     def __init__(self, llm, rag):
@@ -25,4 +26,5 @@ class CTOAgent(Role):
         self._sel = SelectSDSAction(llm=llm)
         
     async def choose(self, question, sds_list):
-        return await self._sel.run(question=question, sds_list=sds_list, rag_client=self.rag)
+        with model_call_context(role='CTO', agent_id='CTO', stage='selection'):
+            return await self._sel.run(question=question, sds_list=sds_list, rag_client=self.rag)

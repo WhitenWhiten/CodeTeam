@@ -25,6 +25,7 @@ def parser():
     cli.add_argument('--artifacts-dir')
     cli.add_argument('--provider', choices=['mock', 'openai'])
     cli.add_argument('--model')
+    cli.add_argument('--seed', type=int)
     cli.add_argument('--base-url')
     cli.add_argument('--architects', type=int)
     cli.add_argument('--max-rounds', type=int)
@@ -41,6 +42,7 @@ async def amain(argv=None):
     targets = {'question': 'user_question', 'requirements_file': 'requirements_file',
                'workspace': 'workspace', 'artifacts_dir': 'artifacts_dir', 'resume': 'resume_from',
                'provider': 'llm.provider', 'model': 'llm.model', 'base_url': 'llm.base_url',
+               'seed': 'llm.seed',
                'architects': 'architects', 'max_rounds': 'max_rounds', 'max_tokens': 'max_token_budget',
                'max_calls': 'max_model_calls', 'max_seconds': 'max_wall_clock_seconds',
                'git': 'git.enabled', 'rag': 'rag.enabled'}

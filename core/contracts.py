@@ -85,6 +85,7 @@ class RunResult:
     artifacts_dir: str | None = None
     repairs: int = 0
     usage: dict[str, Any] = field(default_factory=dict)
+    timing: dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:

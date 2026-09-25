@@ -37,6 +37,7 @@ class OpenAILLM(MeteredModel):
         token_limit: int | None = None,
         call_limit: int | None = None,
         client=None,
+        seed: int | None = None,
     ):
         if AsyncOpenAI is None and client is None:
             raise RuntimeError("Install the openai dependency to use this provider")
@@ -48,6 +49,7 @@ class OpenAILLM(MeteredModel):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
+        self.seed = seed
         self.request_timeout = request_timeout
         self.request_retries = request_retries
         self.usage = UsageLedger(token_limit, call_limit)
@@ -62,9 +64,13 @@ class OpenAILLM(MeteredModel):
         system = "Return ONLY a valid JSON object." if json_mode else "You are a senior software engineer."
         for attempt in range(self.request_retries + 1):
             record = self.usage.reserve(system + prompt, self.max_tokens)
-            record.update(model=self.model, temperature=self.temperature, top_p=self.top_p, attempt=attempt + 1)
+            record.update(model=self.model, provider='openai', temperature=self.temperature, top_p=self.top_p,
+                          sampling_seed=self.seed, attempt=attempt + 1)
+            record['messages'] = [{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}]
             try:
                 options = {"response_format": {"type": "json_object"}} if json_mode else {}
+                if self.seed is not None:
+                    options['seed'] = self.seed
                 async with asyncio.timeout(self.request_timeout):
                     resp = await self.client.chat.completions.create(
                     model=self.model,
@@ -76,6 +82,8 @@ class OpenAILLM(MeteredModel):
                     **options,
                 )
                 content = resp.choices[0].message.content or ""
+                record.update(response_id=getattr(resp, 'id', None), response_model=getattr(resp, 'model', None),
+                              system_fingerprint=getattr(resp, 'system_fingerprint', None))
             except BaseException as exc:
                 self.usage.finish(record, error=type(exc).__name__)
                 status = getattr(exc, "status_code", None)

@@ -21,6 +21,18 @@ async def generate(job, attempt, resume=False):
     if cfg.preprocess_requirements:
         question = preprocess_requirements(question)
     ctx = bootstrap(cfg)
+    previous = sorted(p for p in attempt.parent.glob('attempt-*') if p.name < attempt.name)
+    if previous and not cfg.resume_from:
+        last_runtime = previous[-1] / 'runtime'
+        if (last_runtime / 'model_usage.json').exists():
+            ctx.llm.usage.restore(read_json(last_runtime / 'model_usage.json'))
+        if (last_runtime / 'time_usage.json').exists():
+            timing = read_json(last_runtime / 'time_usage.json')
+            ctx.prior_elapsed_seconds = timing['elapsed_seconds']
+            ctx.prior_time_uncertain = timing.get('conservative_recovery', False)
+            if not timing.get('closed', False):
+                ctx.prior_elapsed_seconds += max(0, time.time() - timing['recorded_at_unix'])
+                ctx.prior_time_uncertain = True
     try:
         return to_jsonable(await MultiAgentCodegenWorkflowAsync(ctx).run(question))
     finally:

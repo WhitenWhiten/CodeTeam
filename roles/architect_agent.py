@@ -16,6 +16,7 @@ except ImportError:
             return await action.run(**kwargs)
 
 from actions.generate_sds import GenerateSDSAction
+from core.call_context import model_call_context
 
 class ArchitectAgent(Role):
     def __init__(self, name: str, llm, rag):
@@ -31,10 +32,6 @@ class ArchitectAgent(Role):
         claimed_summary: str = "",
         return_trace: bool = False,
     ) -> dict:
-        return await self._gen.run(
-            question=question,
-            rag_client=self.rag,
-            design_preference=design_preference,
-            claimed_summary=claimed_summary,
-            return_trace=return_trace,
-        )
+        with model_call_context(role='Architect', agent_id=self.name, stage='planning'):
+            return await self._gen.run(question=question, rag_client=self.rag,
+                design_preference=design_preference, claimed_summary=claimed_summary, return_trace=return_trace)

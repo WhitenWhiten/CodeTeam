@@ -13,6 +13,7 @@ except ImportError:
             raise NotImplementedError
 
 from core.schemas import validate_qa_test_bundle
+from core.call_context import model_call_context
 
 QA_PROMPT_FALLBACK = """You are a QA engineer. Your task is to generate executable pytest tests and the corresponding test-run strategy from the selected SDS.
 
@@ -57,6 +58,7 @@ class GenerateTestsAction(Action):
 
     async def run(self, sds, llm):
         prompt = self._build_prompt(sds)
-        bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
+        with model_call_context(role='QA', agent_id='QA', stage='qa_test_generation'):
+            bundle = await llm.structured_json(prompt, schema="QA_TEST_BUNDLE")
         validate_qa_test_bundle(bundle)
         return bundle

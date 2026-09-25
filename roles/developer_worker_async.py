@@ -6,6 +6,7 @@ from actions.generate_code import GenerateCodeAction
 from actions.request_briefing import RequestBriefingAction
 from utils.logger import get_logger
 from core.dependencies import resolve_file_dependencies
+from core.call_context import model_call_context
 
 class DeveloperWorkerAsync:
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
@@ -40,9 +41,11 @@ class DeveloperWorkerAsync:
             try:
                 file_spec = self.sds_map[file_path]
                 briefs = await self._collect_briefs(file_spec)
-                brief = await self._gen.run(file_spec=file_spec, briefs=briefs,
-                                            llm=self.llm, repo_manager=self.repo,
-                                            agent_id=self.agent_id, issues=issues)
+                with model_call_context(role='Developer', agent_id=self.agent_id, file_path=file_path,
+                                        stage='repair' if t == 'fix' else 'implementation'):
+                    brief = await self._gen.run(file_spec=file_spec, briefs=briefs,
+                                               llm=self.llm, repo_manager=self.repo,
+                                               agent_id=self.agent_id, issues=issues)
                 self.briefs.update_brief(file_path, brief, update_reason=brief.get("latest_update_reason"))
                 await self.bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path, "update_reason": brief.get("latest_update_reason", {})})
                 self.log.info(f"done {t} {file_path}")

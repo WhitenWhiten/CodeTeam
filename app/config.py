@@ -40,6 +40,7 @@ class LLMConfig(ConfigModel):
     base_url: Optional[str] = None
     request_timeout: float = Field(default=60, gt=0)
     request_retries: int = Field(default=2, ge=0, le=10)
+    seed: Optional[int] = Field(default=None, ge=0, le=4294967295)
 
 
 class GitConfig(ConfigModel):
@@ -81,6 +82,7 @@ ENV_PATHS = {
     'LLM_PROVIDER': 'llm.provider', 'LLM_MODEL': 'llm.model', 'LLM_BASE_URL': 'llm.base_url',
     'LLM_TOP_P': 'llm.top_p', 'LLM_TEMPERATURE': 'llm.temperature', 'LLM_MAX_TOKENS': 'llm.max_tokens',
     'LLM_REQUEST_TIMEOUT': 'llm.request_timeout', 'LLM_REQUEST_RETRIES': 'llm.request_retries',
+    'LLM_SEED': 'llm.seed',
     'USER_QUESTION': 'user_question', 'REQUIREMENTS_FILE': 'requirements_file',
     'PREPROCESS_REQUIREMENTS': 'preprocess_requirements', 'WORKSPACE': 'workspace',
     'ARCHITECTS': 'architects', 'ARCHITECT_SEED': 'architect_seed', 'SDS_RETRY': 'sds_retry',

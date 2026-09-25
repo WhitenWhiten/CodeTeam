@@ -91,3 +91,36 @@ Run untrusted generated code on a dedicated evaluator host/container environment
 NL2Repo containers are removed on timeout/cancellation; build images and logs are
 retained for audit. The default registry tags are inherited from the official
 harness; the returned built-image ID is retained in official.json.
+
+## Measured cost and random seeds
+
+The manifest seed is applied to Architect preferences, ownership randomization and
+the provider sampling seed. Standalone runs also accept --seed / CODETEAM_LLM_SEED.
+The OpenAI-compatible endpoint must support the seed parameter: unsupported seeds
+fail explicitly, rather than being silently discarded. Provider seed behavior is
+best effort; requested seed, actual response model and system fingerprint are
+recorded. Mock providers remain deterministic fixtures, not random-seed evidence.
+
+Each model call records role, agent, stage, target file where relevant, messages,
+response, input/output/total provider tokens, timestamps and latency. Attribution
+uses task-local context and is unaffected by concurrent developers completing in
+a different order. Unknown usage is retained as a separately marked conservative
+budget estimate, never represented as measured input/output tokens.
+
+~~~text
+codeteam-experiment costs runs/pilot-v1
+codeteam-experiment costs runs/pilot-v1 --input-usd-per-million 1 --output-usd-per-million 2
+~~~
+
+The optional prices are user-supplied examples, not current market prices. Dollar
+estimates are null unless all calls have a complete token breakdown. GPU hours are
+null for API inference without external hardware telemetry. Role model latency
+is the sum of call durations and can overlap; it is not run wall-clock time.
+
+Token, call and wall-clock ceilings survive checkpoint recovery. Time is persisted
+at stages and every second. After an unclean process death the unclosed interval
+is conservatively charged through restart (including possible downtime), with an
+explicit conservative_recovery flag. Normal completed/cancelled invocations retain
+measured active time. Interrupted planning restarted in a new retained attempt
+carries forward the preceding attempt's resource charges. Terminal failed samples
+are not retried by --resume.

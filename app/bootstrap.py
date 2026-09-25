@@ -22,6 +22,7 @@ def bootstrap(cfg):
             request_retries=cfg.llm.request_retries,
             token_limit=cfg.max_token_budget,
             call_limit=cfg.max_model_calls,
+            seed=cfg.llm.seed,
         )
     elif provider == "mock":
         llm = metered_mock(cfg.llm, cfg.max_token_budget, cfg.max_model_calls)
