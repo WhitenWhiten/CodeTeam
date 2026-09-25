@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Dict, Any, List, Set, Tuple
 from utils.sds_normalizer import normalize_sds_candidate
+from core.contracts import repository_path
 try:
     import jsonschema
 except ImportError:
@@ -325,6 +326,11 @@ def _raise_if_dependency_graph_has_cycle(graph: Dict[str, Set[str]]) -> None:
 
 def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
     sds_json = normalize_sds_candidate(sds_json)
+    def check_nodes(nodes):
+        for node in nodes:
+            repository_path(node["path"])
+            check_nodes(node.get("children", []))
+    check_nodes(sds_json["repo_structure"])
     repo_file_list = _flatten_repo_file_list(sds_json["repo_structure"])
     if len(repo_file_list) != len(set(repo_file_list)):
         seen = set()
@@ -345,6 +351,9 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
         raise ValueError(f"file_specs.path not in repo_structure: {missing}")
     # dev_plan must cover each file_specs file exactly once.
     assigned = {}
+    ids = [a["developer_id"] for a in sds_json["dev_plan"]]
+    if any(not value.strip() for value in ids) or len(ids) != len(set(ids)):
+        raise ValueError("developer IDs must be non-empty and unique")
     for a in sds_json["dev_plan"]:
         for fp in a["file_paths"]:
             if fp in assigned:
@@ -380,7 +389,7 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
             )
             if not ok:
                 raise ValueError(f"dependency does not point to a declared file or symbol: {path} -> {dependency}")
-            graph[path].update(target for target in targets if target in spec_set)
+            graph[path].update(target for target in targets if target in spec_set and target != path)
     _raise_if_dependency_graph_has_cycle(graph)
 
     # Supported tech_stack language check; this PoC supports only python.

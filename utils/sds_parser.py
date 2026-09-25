@@ -13,6 +13,8 @@ def _cls(d): return ClassBrief(name=d["name"], init_signature=d.get("init_signat
 
 def parse_sds(sds_json: Dict[str, Any]) -> SDS:
     sds_json = normalize_sds_candidate(sds_json)
+    from core.schemas import validate_sds
+    validate_sds(sds_json)
     repo_nodes = [_node(n) for n in sds_json["repo_structure"]]
     file_specs = []
     for fs in sds_json["file_specs"]:

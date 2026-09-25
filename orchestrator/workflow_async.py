@@ -10,6 +10,7 @@ from roles.qa_agent_async import QAAgentAsync
 from core.repo_manager import RepoManager
 from core.brief_manager import BriefManager
 from core.schemas import validate_sds
+from core.contracts import to_jsonable
 from utils.sds_parser import parse_sds
 from utils.sds_normalizer import normalize_sds_candidate
 from utils.allowed_files import flatten_repo_structure
@@ -118,15 +119,7 @@ class MultiAgentCodegenWorkflowAsync:
         with StageTimer(self.log, "qa_init_tests"):
             await qa.init_tests(chosen_sds)
 
-        sds_map: Dict[str, dict] = {fs.path: {
-            "path": fs.path,
-            "responsibilities": fs.responsibilities,
-            "interfaces": {
-                "functions": [f.__dict__ for f in fs.interfaces["functions"]],
-                "classes": [c.__dict__ for c in fs.interfaces["classes"]],
-            },
-            "dependencies": fs.dependencies
-        } for fs in sds.file_specs}
+        sds_map: Dict[str, dict] = {fs.path: to_jsonable(fs) for fs in sds.file_specs}
 
         dev_tasks = []
         for a in sds.dev_plan:
