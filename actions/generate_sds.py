@@ -96,7 +96,7 @@ class GenerateSDSAction(Action):
         prompt = self._build_prompt(question, rag_docs, design_preference, claimed_summary)
         prompt += "\nREQUIREMENT_CATALOG\n" + json.dumps(getattr(self.llm,"requirement_catalog",[]), ensure_ascii=False)
         sds_json = await self.llm.structured_json(prompt, schema="SDS")
-        validate_sds(sds_json)
         if return_trace:
             return {"sds": sds_json, "rag_docs": rag_docs, "prompt": prompt}
+        validate_sds(sds_json)
         return sds_json

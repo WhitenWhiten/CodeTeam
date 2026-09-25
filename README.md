@@ -25,7 +25,7 @@ The framework is designed for the natural language to repository generation (NL2
 </div>
 
 CodeTeam organizes repository generation into a multi-agent workflow.
-Multiple Architect Agents first propose alternative software design sketches (SDSs), a CTO Agent selects and normalizes the final plan, Developer Agents implement files under dependency-aware scheduling, and a QA Agent tests and repairs the generated repository iteratively.
+Multiple Architect Agents first propose alternative software design sketches (SDSs), a CTO Agent scores mechanically validated plans and the runtime ranks them, Developer Agents implement files under dependency-aware scheduling, and a QA Agent tests and repairs the generated repository iteratively.
 When retrieval is enabled, architects are additionally grounded with design-oriented references retrieved from a curated corpus of public GitHub repositories.
 
 ## ✨ Features
@@ -79,7 +79,7 @@ benchmark runs remain separate from the included fixture and small-model tests.
 
 CodeTeam generates a repository from an empty workspace in three stages: planning, decision making, and implementation. First, the input requirements document is preprocessed from the project README. Then, multiple Architect Agents propose alternative software design sketches (SDSs). Each SDS specifies the repository file tree, key dependencies, public interfaces, cross-file dependencies, and a project-specific developer plan, including how many Developer Agents should be instantiated and which files each developer should own. When retrieval is enabled, the architects are additionally grounded with design-oriented references retrieved from a curated corpus of public GitHub repositories.
 
-After that, a CTO Agent evaluates the candidate SDSs, selects one plan, and normalizes it into an executable contract for the downstream stages. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while a lightweight Git-based coordination mechanism is used to propagate interface changes across agents. Finally, a QA Agent generates temporary lightweight tests, executes the configured setup commands and pytest run strategy inside the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted. The temporary QA tests are removed before the final repository is returned.
+Each candidate is first normalized and mechanically validated. A CTO Agent scores every valid candidate, and a deterministic aggregation and tie-break rule selects the executable contract. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while commit-linked, replayable interface events propagate accepted changes. Git branches share one worktree; writes and integration are serialized. Initially and after changed implementation batches, a QA Agent generates and retains versioned temporary regression tests, executes the configured setup commands and pytest run strategy inside the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted. The temporary QA tests are removed before the final repository is returned.
 
 In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. This repository provides the prompting-based workflow implementation and the paper's PE/SFT result data for statistical reproduction.
 
@@ -101,7 +101,7 @@ In this project, NL2Repo-Bench is used as an external validation benchmark for R
 
 The ablation study is designed to isolate the contribution of the main workflow components of CodeTeam under the prompting-based setting. All ablations keep the same backbone model, decoding configuration, budgets, and overall workflow wherever possible.
 
-The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. Three ablation variants are considered in the paper. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed four-developer round-robin assignment. The paper also describes an ablation without Git-based coordination. In the current runtime, disabling Git removes branches and commits while retaining in-memory interface briefs and structured update reasons; this flag alone does not reproduce removal of all coordination information.
+The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. Three ablation variants are considered in the paper. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed-size round-robin assignment (at most one nonempty owner per source file). The paper also describes an ablation without Git-based coordination. In the current runtime, disabling Git removes branches and commits while retaining persistent interface briefs and structured update reasons; this flag alone does not reproduce removal of all coordination information.
 
 These ablations are mainly evaluated on SketchEval. In addition to end-to-end SketchBLEU, the study also examines planning-stage and coordination-stage diagnostics, such as SDS parse success, structural validity, plan diversity, QA rounds, interface-mismatch failures, and average context size.
 
@@ -177,3 +177,7 @@ CodeTeam/
   year = {2026}
 }
 ```
+
+## Mechanism implementation protocol
+
+The M01–M16 mechanism improvements are documented in [the runtime protocol](docs/mechanism-runtime.md), with separate commits and batched acceptance in [the progress record](docs/mechanism-progress.md). Explicit switches cover selection, allocation, ownership, scheduling, requeue, live briefs, context, Git branches and QA. Existing paper/result descriptions remain historical; these implementation changes are not new benchmark results.

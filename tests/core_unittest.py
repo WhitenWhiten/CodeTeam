@@ -110,7 +110,7 @@ Use `checkout_total(items)`.
         self.assertIn("## API", normalized)
         self.assertNotIn("badge.svg", normalized)
         self.assertNotIn("logo.png", normalized)
-        self.assertNotIn("purely decorative banner", normalized)
+        self.assertIn("purely decorative banner", normalized)  # Unknown examples are preserved conservatively.
         self.assertNotIn("old release note", normalized)
 
 
@@ -179,8 +179,8 @@ class PromptAlignmentTests(unittest.TestCase):
         prompt_text = prompt_path.read_text(encoding="utf-8")
 
         for content in (prompt_text, CTO_PROMPT_FALLBACK):
-            self.assertIn("The current PoC supports only `python + pytest`", content)
-            self.assertIn("business modules, key flows, and boundary conditions", content)
+            self.assertIn("Supported execution: python + pytest", content)
+            self.assertIn("requirement coverage", content)
             self.assertNotIn("If the selected tech stack is not python", content)
 
     def test_qa_prompt_uses_behavior_based_test_naming(self):
@@ -214,7 +214,7 @@ class PromptAlignmentTests(unittest.TestCase):
             }
         )
 
-        self.assertIn('"chosen_index"', cto_prompt)
+        self.assertIn("evaluations", cto_prompt)
         self.assertIn('"setup_commands": []', qa_prompt)
 
     def test_developer_prompt_is_externalized_and_renders(self):

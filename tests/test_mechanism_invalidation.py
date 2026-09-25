@@ -22,3 +22,17 @@ def test_internal_fix_does_not_regenerate_consumer():
     s.restore_completed(["a.py","b.py"])
     payloads=s.requeue_from_fixes([{"file_path":"a.py","issues":{"message":"AssertionError"},"affected_dependents":["b.py"],"public_api_changed":False}])
     assert set(payloads)=={"a.py"} and s.completed=={"b.py"}
+
+
+def test_method_locals_do_not_invalidate_but_descriptors_do():
+    a=to_brief("class C:\n def f(self):\n  local=1\n  return local\n")
+    b=to_brief("class C:\n def f(self):\n  local=2\n  return local\n")
+    assert interface_version(a)==interface_version(b)
+    c=to_brief("class C:\n @property\n def f(self): return 1\n")
+    assert interface_version(a)!=interface_version(c)
+
+
+def test_explicit_private_export_signature_is_tracked():
+    a=to_brief("__all__=['_f']\ndef _f(x): return x")
+    b=to_brief("__all__=['_f']\ndef _f(x,y): return x")
+    assert interface_version(a)!=interface_version(b)

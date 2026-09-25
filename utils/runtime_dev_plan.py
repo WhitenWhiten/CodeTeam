@@ -32,8 +32,27 @@ def build_runtime_sds_json(
     dynamic_enabled: bool,
     fixed_agent_count: int = 4,
     assignment_seed: Optional[int] = None,
+    ownership: Optional[str] = None,
 ) -> Dict[str, Any]:
     runtime_sds = deepcopy(sds_json)
+    if ownership is not None:
+        original=runtime_sds["dev_plan"]
+        paths=[fs["path"] for fs in runtime_sds["file_specs"]]
+        count=len(original) if dynamic_enabled else min(fixed_agent_count,len(paths))
+        groups=[list(a["file_paths"]) for a in original]
+        if ownership == "sds":
+            while len(groups)>count:
+                groups[-2].extend(groups.pop())
+            while len(groups)<count:
+                largest=max(range(len(groups)),key=lambda i:len(groups[i]))
+                groups.append([groups[largest].pop()])
+        else:
+            if ownership == "random": random.Random(assignment_seed).shuffle(paths)
+            groups=[paths[i::count] for i in range(count)]
+        runtime_sds["dev_plan"]=[{"developer_id":original[i]["developer_id"] if dynamic_enabled else f"Dev-{i+1}","file_paths":group} for i,group in enumerate(groups) if group]
+        owners={p:a["developer_id"] for a in runtime_sds["dev_plan"] for p in a["file_paths"]}
+        for spec in runtime_sds["file_specs"]: spec["owner"]=owners[spec["path"]]
+        return runtime_sds
     if dynamic_enabled:
         return runtime_sds
 

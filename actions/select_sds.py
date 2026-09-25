@@ -70,6 +70,7 @@ class SelectSDSAction(Action):
         attempts = []
         for attempt in range(3):
             count(self.llm, "cto_attempts", retry=attempt)
+            if attempt: count(self.llm,"cto_decision_retries")
             result = await self.llm.structured_json(prompt, schema="CTO_DECISION")
             try:
                 ranked = rank_candidates(result, candidates)

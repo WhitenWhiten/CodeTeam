@@ -47,9 +47,11 @@ class DependencyScheduler:
     package or undeclared resource and is ignored for scheduling.
     """
 
-    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None, state=None, max_concurrent=None):
+    def __init__(self, sds_or_file_specs: Any, dev_plan: Sequence[Any] | None = None, state=None, max_concurrent=None, dependency_scheduling=True, dependent_requeue=True):
         self.state = state
         self.max_concurrent = max_concurrent
+        self.dependency_scheduling = dependency_scheduling
+        self.dependent_requeue = dependent_requeue
         if dev_plan is None and hasattr(sds_or_file_specs, "file_specs"):
             file_specs = list(sds_or_file_specs.file_specs)
             dev_plan = list(getattr(sds_or_file_specs, "dev_plan", []))
@@ -159,9 +161,9 @@ class DependencyScheduler:
             path
             for path in self.pending
             if (owner_filter is None or self.owner_by_file[path] == owner_filter)
-            and self.dependencies[path].issubset(self.completed)
+            and (not self.dependency_scheduling or self.dependencies[path].issubset(self.completed))
         ]
-        return sorted(ready, key=lambda path: self.priorities[path], reverse=True)
+        return sorted(ready, key=lambda path: self.priorities[path], reverse=True) if self.dependency_scheduling else sorted(ready,key=lambda p:self.order[p])
 
     def dispatch_ready(self) -> List[ScheduledFile]:
         dispatched: List[ScheduledFile] = []
@@ -244,7 +246,7 @@ class DependencyScheduler:
                 fix.get("public_api_changed", issues.get("public_api_changed", False))
             )
             affected_dependents = []
-            if public_api_changed:
+            if public_api_changed and self.dependent_requeue:
                 affected_dependents = self._affected_dependents(fix, issues) + self.transitive_dependents(file_path)
 
             for dependent in affected_dependents:

@@ -3,10 +3,11 @@ from typing import Any, Dict, Optional
 from threading import RLock
 
 class BriefManager:
-    def __init__(self, artifacts=None):
+    def __init__(self, artifacts=None, live=True):
         self._briefs: Dict[str, dict] = {}
         self._lock = RLock()
         self.artifacts = artifacts
+        self.live = live
         self.events = []
         if artifacts and artifacts.root and (artifacts.root / "interfaces/journal.json").exists():
             self.events = artifacts.read_json("interfaces/journal.json")
@@ -16,7 +17,7 @@ class BriefManager:
         with self._lock:
             self._briefs = {}
             for event in self.events:
-                if event["kind"] == "publish":
+                if event["kind"] == "publish" and event.get("indexed", True):
                     self._briefs[event["file_path"]] = deepcopy(event["brief"])
 
     def record(self, kind, **payload):
@@ -96,8 +97,10 @@ class BriefManager:
             if accepted == self._briefs.get(file_path):
                 return
             accepted["publication_id"] = len(self.events) + 1
-            self.record("publish", file_path=file_path, brief=accepted)
-            self._briefs[file_path] = accepted
+            indexed = self.live or file_path not in self._briefs
+            self.record("publish", file_path=file_path, brief=accepted, indexed=indexed)
+            if indexed:
+                self._briefs[file_path] = accepted
 
     def get_brief(self, file_path: str) -> dict | None:
         with self._lock:

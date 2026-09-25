@@ -25,6 +25,9 @@ class QAAgentAsync:
         self.test_requirements = {}
         self.fixture_dependencies = {}
         self._snapshot = None
+        self.generation_attempts = 0
+        if artifacts and artifacts.root and (artifacts.root/"qa/generation_state.json").exists():
+            self.generation_attempts = artifacts.read_json("qa/generation_state.json")["attempts"]
         self._sds_json = None
         self.log = get_logger("QA")
         self.file_owner: Dict[str, str] = {}
@@ -65,11 +68,13 @@ class QAAgentAsync:
         context = {"requirements": self.requirements, "phase": phase, "completed_files": sorted(completed),
                    "source_versions": sources, "interface_briefs": briefs, "existing_tests": self.tests,
                    "requirement_catalog": getattr(self.llm,"requirement_catalog",[])}
+        self.generation_attempts += 1
+        if self.artifacts: self.artifacts.write_json("qa/generation_state.json",{"attempts":self.generation_attempts})
         try:
             res = await self._gen.run(sds=self._sds_json, llm=self.llm, context=context)
         finally:
             if self.artifacts:
-                self.artifacts.write_json(f"qa/generation_{len(self.history)}.json", {"context": context, "attempts": getattr(self._gen, "attempts", [])})
+                self.artifacts.write_json(f"qa/generation_{self.generation_attempts:06d}.json", {"context": context, "attempts": getattr(self._gen, "attempts", [])})
         added, renamed = [], {}
         version = len(self.history)
         for path, content in res["tests"].items():
@@ -110,7 +115,7 @@ class QAAgentAsync:
             if module.endswith(".__init__"):
                 modules[module[:-9]] = path
         deps = resolve_file_dependencies(self.sds.file_specs, getattr(self.repo, "allowed_files_all", None))
-        selected = {}
+        references = {}
         for path, code in self.tests.items():
             try:
                 tree = ast.parse(code)
@@ -127,18 +132,22 @@ class QAAgentAsync:
                     if dep not in referenced:
                         referenced.add(dep)
                         queue.append(dep)
-            if referenced and referenced.issubset(completed):
-                selected[path] = code
-        if selected:
-            for path, code in self.tests.items():
-                if path.endswith("conftest.py"):
-                    selected[path] = code
-            pending = list(selected)
+            references[path] = referenced
+        selected = {}
+        conftests=[p for p in self.tests if p.endswith("conftest.py")]
+        for path,code in self.tests.items():
+            if path in conftests or path not in references: continue
+            closure={path}
+            pending=[path]
             while pending:
-                for fixture in self.fixture_dependencies.get(pending.pop(), []):
-                    if fixture not in selected:
-                        selected[fixture] = self.tests[fixture]
-                        pending.append(fixture)
+                current=pending.pop()
+                fixtures=list(self.fixture_dependencies.get(current,[]))
+                fixtures.extend(p for p in conftests if current.startswith(p.rsplit("/",1)[0]+"/"))
+                for fixture in fixtures:
+                    if fixture not in closure:
+                        closure.add(fixture); pending.append(fixture)
+            if completed and all(p in references and references[p].issubset(completed) for p in closure):
+                selected.update({p:self.tests[p] for p in closure})
         # An explicit target may refer to a test withheld from this batch. Wait
         # until it is ready instead of running pytest against a nonexistent file.
         for argument in command_args(self.run_command or "pytest -q"):

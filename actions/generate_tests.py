@@ -76,10 +76,10 @@ class GenerateTestsAction(Action):
                 for test,ids in bundle.get("test_requirements",{}).items():
                     if test not in bundle["tests"] or not set(ids).issubset(known):
                         raise ValueError("QA contains unknown test/requirement references")
-                self.attempts.append({"attempt": attempt, "status": "accepted", "bundle": bundle})
+                self.attempts.append({"attempt": attempt, "status": "accepted", "bundle": bundle, "structured_responses":getattr(llm,"last_structured_trace",[])})
                 return bundle
             except (SyntaxError, ValueError, __import__('jsonschema').ValidationError) as exc:
-                self.attempts.append({"attempt": attempt, "status": "rejected", "error": str(exc), "bundle": bundle})
+                self.attempts.append({"attempt": attempt, "status": "rejected", "error": str(exc), "bundle": bundle, "structured_responses":getattr(llm,"last_structured_trace",[])})
                 if first_tests is None and isinstance(bundle.get("tests"), dict): first_tests = dict(bundle["tests"])
                 if attempt == 2: raise ValueError(f"QA test-source repair exhausted: {exc}") from exc
                 prompt += "\nRepair only test syntax/import defects. Preserve test functions and assertions; do not skip tests.\n" + str(exc) + "\nPrevious bundle: " + json.dumps(bundle)

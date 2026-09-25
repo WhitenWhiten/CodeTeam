@@ -11,7 +11,7 @@ from core.brief_manager import StaleBriefContext
 
 class DeveloperWorkerAsync:
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
-                 llm, repo_manager, brief_manager, event_bus, context_config=None):
+                 llm, repo_manager, brief_manager, event_bus, context_config=None, mechanisms=None):
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
         self.sds_map = sds_map
@@ -27,6 +27,7 @@ class DeveloperWorkerAsync:
         self._gen.repo_files = list(getattr(repo_manager, "allowed_files_all", sds_map))
         self._gen.brief_manager = brief_manager
         self._gen.context_config = context_config
+        self.mechanisms = mechanisms
         self._req = RequestBriefingAction()
 
     async def start(self):
@@ -45,6 +46,7 @@ class DeveloperWorkerAsync:
             issues = task.get("issues")
             try:
                 file_spec = self.sds_map[file_path]
+                self._gen.extra_brief_requests_used = 0
                 for context_attempt in range(3):
                     briefs = await self._collect_briefs(file_spec)
                     try:
@@ -68,7 +70,12 @@ class DeveloperWorkerAsync:
         briefs = {}
         for dep in sorted(self.dependencies[file_spec["path"]]):
             brief = await self._req.run(target_file=dep, brief_manager=self.briefs)
-            if brief is None:
+            if brief is None or (brief.get("origin")=="initial_repository" and not brief.get("functions") and not brief.get("classes")):
                 brief = dict(self.sds_map.get(dep, {}).get("interfaces", {"functions": [], "classes": []}), origin="sds_declared")
             briefs[dep] = brief
+        if getattr(self.mechanisms, "context_mode", "compact") == "full":
+            with self.repo.collaboration_lock():
+                for path in sorted(self.sds_map):
+                    if path != file_spec["path"] and self.repo.is_file(path):
+                        briefs.setdefault(path, self.briefs.get_brief(path) or {})["full_source"] = self.repo.read_file(path)
         return briefs

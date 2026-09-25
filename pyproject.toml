@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Dependency-aware multi-agent Python repository generation"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2,<3", "jsonschema>=4", "openai>=1", "pytest>=7", "numpy>=1.24"]
+dependencies = ["pydantic>=2,<3", "jsonschema>=4", "openai>=1", "pytest>=7", "numpy>=1.24", "packaging>=23"]
 
 [project.optional-dependencies]
 rag = ["sentence-transformers", "faiss-cpu"]

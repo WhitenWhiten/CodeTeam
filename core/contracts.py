@@ -57,6 +57,7 @@ class TestFailure:
 
 class RunStatus(str, Enum):
     SUCCESS = "success"
+    GENERATED_UNVERIFIED = "generated_unverified"
     VALIDATION_FAILED = "validation_failed"
     BUDGET_EXHAUSTED = "budget_exhausted"
     ERROR = "error"

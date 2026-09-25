@@ -42,7 +42,7 @@ def _extra_surface(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                if isinstance(target, ast.Name) and not target.id.startswith("_"):
+                if isinstance(target, ast.Name) and (not target.id.startswith("_") or target.id == "__all__"):
                     constants.append({"name": target.id, "value": ast.unparse(node.value) if node.value else None,
                                       "annotation": ast.unparse(node.annotation) if isinstance(node, ast.AnnAssign) else None})
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -51,12 +51,20 @@ def _extra_surface(tree):
                 name = alias.asname or alias.name.split(".")[0]
                 if not name.startswith("_"):
                     exports.append({"name": name, "source": ast.unparse(node)})
+        if isinstance(node, (ast.FunctionDef,ast.AsyncFunctionDef)) and node.decorator_list:
+            attributes.append({"name":node.name+".<decorators>","value":[ast.unparse(d) for d in node.decorator_list]})
         if isinstance(node, ast.ClassDef):
+            attributes.append({"name":node.name+".<class-contract>","value":{
+                "bases":[ast.unparse(b) for b in node.bases],"keywords":[ast.unparse(k) for k in node.keywords],
+                "decorators":[ast.unparse(d) for d in node.decorator_list]}})
+            for method in node.body:
+                if isinstance(method,(ast.FunctionDef,ast.AsyncFunctionDef)) and not method.name.startswith("_"):
+                    attributes.append({"name":node.name+"."+method.name+".<decorators>","value":[ast.unparse(d) for d in method.decorator_list]})
             for child in ast.walk(node):
                 if isinstance(child, (ast.Assign, ast.AnnAssign)):
                     targets = child.targets if isinstance(child, ast.Assign) else [child.target]
                     for target in targets:
-                        name = target.id if isinstance(target, ast.Name) else (target.attr if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in {"self", "cls"} else "")
+                        name = target.id if isinstance(target, ast.Name) and child in node.body else (target.attr if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in {"self", "cls"} else "")
                         if name and not name.startswith("_"):
                             attributes.append({"name": node.name + "." + name, "value": ast.unparse(child.value) if child.value else None})
     return {"constants": constants, "reexports": exports, "imports": sorted(imports), "attributes": attributes}
@@ -69,10 +77,15 @@ def public_surface(brief):
     not proof of a breaking change. Dynamic behavior still requires retesting.
     """
     result = {}
+    exported=set()
+    for entry in brief.get("constants",[]):
+        if entry["name"]=="__all__":
+            try: exported.update(ast.literal_eval(entry["value"]))
+            except (ValueError,TypeError,SyntaxError): pass
     for kind in ("functions", "classes", "constants", "reexports", "attributes"):
         result[kind] = []
         for row in brief.get(kind, []):
-            if row["name"].startswith("_"):
+            if row["name"].startswith("_") and row["name"] not in exported and row["name"]!="__all__":
                 continue
             item = {k: v for k, v in row.items() if k not in {"doc", "methods"}}
             if "methods" in row:

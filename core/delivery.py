@@ -2,6 +2,10 @@
 from pathlib import Path
 import ast
 import re
+import posixpath
+import tomllib
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 
 def delivery_rules(sds, repo_files):
@@ -39,6 +43,44 @@ def initialize_static_files(repo, sds):
     return rules
 
 
+def _manifest_dependency_names(repo):
+    """Read install declarations; comments, metadata and constraints are not dependencies."""
+    names = set()
+    visited = set()
+    active = set()
+
+    def read_requirements(path):
+        if path in active: raise ValueError(f"Circular requirements include: {path}")
+        if path in visited: return
+        if path not in repo.allowed_files_all or not repo.is_file(path):
+            raise ValueError(f"Requirements include is not a delivered planned file: {path}")
+        active.add(path)
+        for raw in repo.read_file(path).replace("\\\n", "").splitlines():
+            line = re.split(r"\s+#", raw, maxsplit=1)[0].strip()
+            if not line or line.startswith("#"): continue
+            include = re.match(r"^(?:-r\s*|--requirement(?:=|\s+))(.+)$", line)
+            if include:
+                target = include.group(1).strip().strip(chr(34) + chr(39))
+                read_requirements(posixpath.normpath(posixpath.join(posixpath.dirname(path), target)))
+            elif not line.startswith("-"):
+                line = re.split(r"\s+--hash(?:=|\s+)", line, maxsplit=1)[0]
+                names.add(canonicalize_name(Requirement(line).name))
+        active.remove(path)
+        visited.add(path)
+
+    if repo.is_file("requirements.txt"): read_requirements("requirements.txt")
+    if repo.is_file("pyproject.toml"):
+        document = tomllib.loads(repo.read_file("pyproject.toml"))
+        declared = document.get("project", {}).get("dependencies", [])
+        if not isinstance(declared, list) or any(not isinstance(r, str) for r in declared):
+            raise ValueError("project.dependencies must be a list of requirement strings")
+        names.update(canonicalize_name(Requirement(r).name) for r in declared)
+        poetry = document.get("tool", {}).get("poetry", {}).get("dependencies", {})
+        if not isinstance(poetry, dict): raise ValueError("tool.poetry.dependencies must be a table")
+        names.update(canonicalize_name(name) for name in poetry if name != "python")
+    return names
+
+
 def check_delivery(repo, sds):
     rules = delivery_rules(sds, repo.allowed_files_all)
     temporary = {p for p, r in rules.items() if r["kind"] == "qa_temporary"}
@@ -53,12 +95,13 @@ def check_delivery(repo, sds):
             try: ast.parse(content)
             except SyntaxError as exc: failures.append({"path": path, "reason": str(exc)})
     dependencies = sds.get("dependencies", []) + sds["tech_stack"].get("dependencies", [])
-    manifests = "\n".join(repo.read_file(p) for p in ("requirements.txt", "pyproject.toml") if repo.is_file(p))
-    normalized = re.sub(r"[-_.]+", "-", manifests.lower())
-    for requirement in dependencies:
-        name = re.split(r"[\[<>=!~ ;@]", requirement, 1)[0]
-        if re.sub(r"[-_.]+", "-", name.lower()) not in normalized:
-            failures.append({"path": "dependency_manifest", "reason": f"Missing declared dependency: {requirement}"})
+    try:
+        manifest_names = _manifest_dependency_names(repo)
+        for requirement in dependencies:
+            if canonicalize_name(Requirement(requirement).name) not in manifest_names:
+                failures.append({"path": "dependency_manifest", "reason": f"Missing declared dependency: {requirement}"})
+    except (ValueError, TypeError, AttributeError) as exc:
+        failures.append({"path": "dependency_manifest", "reason": f"Invalid dependency declaration: {exc}"})
     return {"success": not failures, "required_files": sorted(required), "temporary_files": sorted(temporary), "failures": failures}
 
 

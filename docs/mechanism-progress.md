@@ -18,11 +18,11 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M13: Workload-aware allocation
 - [x] M14: Retrieval information contracts
 - [x] M15: Requirement traceability
-- [ ] M16: Mechanism controls and acceptance
+- [x] M16: Mechanism controls and acceptance
 
 ## Batch validation
 
-Pending.
+Batch A and B passed; Batch C regression fixed and focused recheck passed. Final integration acceptance is recorded at the end of this file.
 
 M01: Added versioned semantic validation, alias conflict rejection, unambiguous dependency resolution and syntactic declaration checks. Batch A acceptance pending.
 
@@ -58,3 +58,41 @@ M13: Added explicit Architect or structural-heuristic effort estimates, reproduc
 M14: Typed source availability distinguishes raw README from provided summaries; one exact packet renderer records order/truncation/hash and both prompt boundaries. Frozen packet replay bypasses corpus/embeddings and validates query identity and budget. Final batch pending.
 
 M15: Centralized original-to-normalized requirements at workflow entry; preserved API/config fences, removed noisy subtrees, and recorded stable IDs/source spans/filter decisions. File/test references and explicit unmapped coverage reach saved artifacts. Final batch pending.
+
+M16: Completed independent runtime controls, validated experiment expectations, effective manifests, task/commit/QA evidence and integration acceptance. Integration also closed stale input, resumed QA, fixture readiness, literal defaults and dependency-manifest edge cases found in batch checks.
+
+Final integration first pass: 146 passed, 8 failed. Updated legacy CTO/example-preservation expectations, supplied complete lifecycle fixtures, corrected a test condition ID, and restored pending QA verification before further generation on resume. Affected-range recheck: 32 passed.
+
+
+## Final acceptance — 2026-09-25
+
+- Consolidated framework suite: **158 passed in 53.29s**. Command: python -m pytest -q -p no:cacheprovider tests --ignore=tests/test_training_integration.py.
+- Subsequent focused acceptance after the final manifest-parser patch and four added negative cases: **24 passed in 8.34s**, covering mechanism contracts/controls/journal, SDS contracts and the complete QA repair loop. This overlaps the consolidated suite and is not an additive count of distinct tests.
+- New negative cases distinguish actual dependency declarations from comments/project names/build dependencies, follow planned requirements includes and reject cycles, reject stale dependency context before writing, and prevent a failed commit from publishing an accepted brief.
+- Offline wheel build passed with --no-deps --no-build-isolation --no-index. New mechanism modules and prompt resources are present; the packaging dependency is declared. codeteam and codeteam-experiment CLI help checks passed.
+- git diff --check passed. Existing data/analyze_experiment_results.py changes were neither modified nor staged.
+- Optional training integration was excluded because this task changes runtime mechanisms, not training. No remote model calls, benchmark scoring, training or performance conclusions are part of this acceptance.
+- All M01–M16 implementation items are complete. Shared-worktree serialization, Python/pytest scope, syntactic contracts and unsupported freeform no-SDS adapters remain explicit boundaries in mechanism-runtime.md.
+
+## Commit index
+
+Each item has its own commit. M16 also contains the integration fixes discovered by the batched acceptance.
+
+| Task | Commit | Change |
+|---|---|---|
+| M01 | 1bd6e4f | feat(contracts): enforce versioned SDS semantic consistency |
+| M02 | 45bac2b | feat(contracts): enforce implementation signatures and imports |
+| M03 | 2585e7e | feat(delivery): require explicit artifact producers and complete output |
+| M04 | 6e4d10d | feat(planning): reject candidates locally and preserve attempt traces |
+| M05 | efdcedb | feat(planning): rank complete CTO scorecards deterministically |
+| M06 | 10d155d | feat(qa): generate versioned tests from requirements and completed batches |
+| M07 | aa27225 | feat(qa): route failures from evidence and aggregate repairs |
+| M08 | ea4ac35 | fix(repair): version public changes and minimize invalidation |
+| M09 | e3c0043 | feat(communication): persist commit-linked interface messages |
+| M10 | f134066 | feat(context): bound developer inputs and explicit brief requests |
+| M11 | 37eb8a5 | feat(planning): record diversity and control duplicate candidates |
+| M12 | 6e03c3b | feat(runtime): close repair budgets and durable mechanism state |
+| M13 | 37ff694 | feat(planning): quantify workload and queue bounded teams |
+| M14 | a8c4544 | feat(rag): freeze typed retrieval packets at prompt boundaries |
+| M15 | acb92c3 | feat(requirements): unify input boundary and trace requirement coverage |
+| M16 | This commit | feat(mechanisms): wire independent controls and verify runtime evidence (M16) |

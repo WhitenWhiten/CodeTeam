@@ -112,7 +112,7 @@ class GenerateCodeAction(Action):
         if not code.strip():
             raise ValueError("Generated file is empty")
         if not file_spec["path"].endswith(".py"):
-            return {"functions": [], "classes": []}
+            return {"functions": [], "classes": [], "constants":[{"name":"<file-content>","value":hashlib.sha256(code.encode()).hexdigest()}]}
         tree = validate_implementation(code, file_spec["interfaces"])
         brief = to_brief(code)
         if getattr(self, "repo_specs", None):
@@ -219,14 +219,15 @@ class GenerateCodeAction(Action):
         consumed = manager.consume(path, briefs) if manager else {}
         current = repo_manager.read_file(path) if repo_manager.exists(path) else ""
         try:
-            previous = to_brief(current) if path.endswith(".py") else {"functions": [], "classes": []}
+            previous = to_brief(current) if path.endswith(".py") else {"functions": [], "classes": [], "constants":[{"name":"<file-content>","value":hashlib.sha256(current.encode()).hexdigest()}]}
         except SyntaxError:
             previous = {"functions": [], "classes": []}
         feedback = dict(issues or {})
         config = getattr(self, "context_config", None)
-        request_count = 0
+        request_count = getattr(self,"extra_brief_requests_used",0)
         for attempt in range(3):
             count(llm, "code_generation_attempts", file_path=path, validation_retry=attempt)
+            if attempt: count(llm,"code_validation_retries",file_path=path)
             while True:
                 builder = lambda b, i: self._build_prompt(file_spec, b, i, current) + '\nYou may request one extra interface using JSON {"request_brief":"relative/path.py"}. Maximum two requests per task; never request source. Otherwise return complete target code.'
                 try:
@@ -243,6 +244,7 @@ class GenerateCodeAction(Action):
                     code = strip_code_fences(raw)
                     break
                 request_count += 1
+                self.extra_brief_requests_used = request_count
                 count(llm, "brief_requests", file_path=path, request=request_count)
                 target = action.get("request_brief")
                 allowed = isinstance(target, str) and target != path and target in getattr(self, "repo_files", [])

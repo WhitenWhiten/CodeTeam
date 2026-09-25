@@ -53,10 +53,14 @@ def validate_runtime(stack):
         raise ValueError(f"Unsupported Python runtime declaration: {runtime}")
 
 
-def _expr(node):
+def _annotation_expr(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         try: return ast.dump(ast.parse(node.value, mode="eval").body)
         except SyntaxError: pass
+    return ast.dump(node) if node is not None else None
+
+
+def _expr(node):
     return ast.dump(node) if node is not None else None
 
 
@@ -70,18 +74,18 @@ def compare_signature(expected, actual):
         if [x.arg for x in a] != [x.arg for x in b]:
             raise ValueError(f"Parameter contract mismatch: {expected.name}.{field}")
         for x, y in zip(a, b):
-            if x.annotation is not None and _expr(x.annotation) != _expr(y.annotation):
+            if x.annotation is not None and _annotation_expr(x.annotation) != _annotation_expr(y.annotation):
                 raise ValueError(f"Annotation contract mismatch: {expected.name}.{x.arg}")
     for field in ("vararg", "kwarg"):
         a, b = getattr(left, field), getattr(right, field)
         if (a.arg if a else None) != (b.arg if b else None):
             raise ValueError(f"Variadic contract mismatch: {expected.name}")
-        if a and a.annotation is not None and _expr(a.annotation) != _expr(b.annotation):
+        if a and a.annotation is not None and _annotation_expr(a.annotation) != _annotation_expr(b.annotation):
             raise ValueError(f"Variadic annotation mismatch: {expected.name}")
     for field in ("defaults", "kw_defaults"):
         if [_expr(x) for x in getattr(left, field)] != [_expr(x) for x in getattr(right, field)]:
             raise ValueError(f"Default contract mismatch: {expected.name}")
-    if expected.returns is not None and _expr(expected.returns) != _expr(actual.returns):
+    if expected.returns is not None and _annotation_expr(expected.returns) != _annotation_expr(actual.returns):
         raise ValueError(f"Return annotation mismatch: {expected.name}")
 
 

@@ -3,13 +3,14 @@ import json
 from types import SimpleNamespace
 
 from core.contracts import RunStatus
+from app.config import SystemConfig
 from orchestrator.workflow import MultiAgentCodegenWorkflow
 from orchestrator.workflow_async import MultiAgentCodegenWorkflowAsync
 from utils.run_artifacts import RunArtifacts
 
 
 def context(tmp_path):
-    return SimpleNamespace(cfg=SimpleNamespace(max_wall_clock_seconds=None),
+    return SimpleNamespace(cfg=SystemConfig(), llm=SimpleNamespace(),
                            artifacts=RunArtifacts(str(tmp_path)))
 
 

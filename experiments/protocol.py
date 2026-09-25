@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 from app.config import ConfigModel, SystemConfig
 from experiments.common import digest, files_digest, read_json
+from core.mechanisms import manifest as mechanism_manifest, validate_expectations
 
 class Task(ConfigModel):
     task_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
@@ -15,12 +16,14 @@ class Condition(ConfigModel):
     condition_id: str = Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.-]*$')
     method: Literal['codeteam'] = 'codeteam'
     variant: str = 'full'
+    mechanism_expectations: dict = Field(default_factory=dict)
     config: SystemConfig = Field(default_factory=SystemConfig)
 
     @model_validator(mode='after')
     def controlled_paths(self):
         if self.config.requirements_file or self.config.resume_from or self.config.artifacts_dir:
             raise ValueError('Experiment runner controls requirements, resume and artifact paths')
+        validate_expectations(self.config,self.variant,self.mechanism_expectations)
         return self
 
 class Experiment(ConfigModel):
@@ -73,6 +76,7 @@ def make_plan(manifest):
                         cfg['rag'][field] = str((manifest.parent / cfg['rag'][field]).resolve())
                 job = {'benchmark': spec.benchmark, 'task_id': task.task_id, 'difficulty': task.difficulty,
                        'condition_id': condition.condition_id, 'method': condition.method, 'variant': condition.variant,
+                       'mechanisms': mechanism_manifest(condition.config), 'verified_expectations': validate_expectations(condition.config,condition.variant,condition.mechanism_expectations),
                        'seed': seed, 'requirements': question, 'requirements_sha256': digest(question), 'config': cfg}
                 job['run_id'] = digest(job)[:24]
                 jobs.append(job)

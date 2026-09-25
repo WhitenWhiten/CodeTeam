@@ -124,3 +124,8 @@ explicit conservative_recovery flag. Normal completed/cancelled invocations reta
 measured active time. Interrupted planning restarted in a new retained attempt
 carries forward the preceding attempt's resource charges. Terminal failed samples
 are not retried by --resume.
+
+
+## Executed mechanism variants
+
+See [the runtime mechanism protocol](mechanism-runtime.md) for independent switches and evidence paths. Known labels such as no_cto, no_live_briefs, no_branches, no_qa and full_context require corresponding actual configuration. Custom labels require mechanism_expectations. plan.json records verified expectations and the effective mechanism manifest; runtime events establish what executed. Completely removing SDS needs a separate freeform adapter and is explicitly rejected here. A QA-disabled artifact is generated_unverified, never falsely marked QA-successful.

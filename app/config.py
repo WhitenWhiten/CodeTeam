@@ -47,6 +47,7 @@ class LLMConfig(ConfigModel):
 
 class GitConfig(ConfigModel):
     enabled: bool = True
+    branches: bool = True
 
 
 class DeveloperAllocationConfig(ConfigModel):
@@ -62,8 +63,22 @@ class ContextConfig(ConfigModel):
     issue_excerpt_chars: int = Field(default=4000, ge=128)
 
 
+class MechanismConfig(ConfigModel):
+    architect_diversity: bool = True
+    cto_selection: bool = True
+    ownership: Literal["sds", "round_robin", "random"] = "sds"
+    dependency_scheduling: bool = True
+    dependent_requeue: bool = True
+    live_briefs: bool = True
+    context_mode: Literal["compact", "full"] = "compact"
+    qa_enabled: bool = True
+    qa_repair: bool = True
+    progressive_qa: bool = True
+
+
 class SystemConfig(ConfigModel):
     context: ContextConfig = Field(default_factory=ContextConfig)
+    mechanisms: MechanismConfig = Field(default_factory=MechanismConfig)
     architects: int = Field(default=4, ge=1)
     architect_seed: Optional[int] = None
     sds_retry: int = Field(default=1, ge=0)

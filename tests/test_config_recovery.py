@@ -45,11 +45,11 @@ def test_resume_skips_completed_generation_and_preserves_usage(tmp_path):
     assert result.success, result.reason
     assert result.repo_root == first.repo_root
     assert (Path(result.repo_root) / "shop/catalog.py").read_bytes() == before
-    assert result.usage["calls"] == 6
-    assert len(ctx.llm.usage.records) == 2
+    assert result.usage["calls"] == 9
+    assert len(ctx.llm.usage.records) == 5  # two new files and three progressive QA snapshots
     assert result.usage["total_tokens"] > first.usage["total_tokens"]
     calls = sorted((Path(cfg.artifacts_dir) / "model_calls").glob("*.json"))
-    assert len(calls) == 6
+    assert len(calls) == 9
     events = [json.loads(line) for line in (Path(cfg.artifacts_dir) / "events.jsonl").read_text().splitlines()]
     assert any(event["kind"] == "resume" for event in events)
 

@@ -19,11 +19,13 @@ class RepoManager:
         allowed_files_all: Set[str],
         allowed_files_by_agent: Dict[str, Set[str]],
         git_enabled: bool = True,
+        branches_enabled: bool = True,
     ):
         self.root = str(Path(root).resolve())
         self.allowed_files_all = {repository_path(p) for p in allowed_files_all}
         self.allowed_files_by_agent = {agent: {repository_path(p) for p in paths} for agent, paths in allowed_files_by_agent.items()}
         self.git_enabled = git_enabled
+        self.branches_enabled = branches_enabled
         if git_enabled and shutil.which("git") is None:
             raise RuntimeError("Git collaboration requested but git is not installed")
         self._collaboration_lock = threading.RLock()
@@ -170,7 +172,7 @@ class RepoManager:
         return branch
 
     def checkout_agent_branch(self, agent_id: Optional[str]) -> Optional[str]:
-        return self.ensure_agent_branch(agent_id)
+        return self.ensure_agent_branch(agent_id) if self.branches_enabled else self.ensure_integration_branch()
 
     def ensure_integration_branch(self) -> Optional[str]:
         if not self.git_enabled:

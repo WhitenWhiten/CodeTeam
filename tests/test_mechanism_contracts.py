@@ -57,3 +57,39 @@ def test_delivery_rejects_unowned_source_and_accepts_explicit_static_rule(tmp_pa
     assert not report["success"]
     assert any(f["path"]=="main.py" for f in report["failures"])
     assert not any(f["path"].endswith("__init__.py") for f in report["failures"])
+
+
+def test_literal_default_string_is_not_equivalent_to_number():
+    from core.interface_contracts import validate_implementation
+    with pytest.raises(ValueError,match="Default"):
+        validate_implementation("def f(x=1): pass", {"functions":[{"name":"f","signature":"def f(x='1'):"}],"classes":[]})
+
+
+def test_delivery_dependency_manifest_uses_declarations_not_mentions(tmp_path):
+    from core.delivery import check_delivery
+    from core.repo_manager import RepoManager
+    s=sample()
+    s["tech_stack"]["dependencies"]=["requests>=2"]
+    s["file_specs"]=[]
+    s["file_rules"]=[{"path":"requirements.txt","producer":"static","kind":"manifest","content":"requests>=2"},
+                     {"path":"pyproject.toml","producer":"static","kind":"manifest","content":"[project]"}]
+    repo=RepoManager(str(tmp_path),{"requirements.txt","pyproject.toml"},{},git_enabled=False)
+    repo.write_file("requirements.txt","# requests>=2\nrequests-mock>=1\n")
+    repo.write_file("pyproject.toml",'[project]\nname="requests"\n[build-system]\nrequires=["requests"]')
+    assert not check_delivery(repo,s)["success"]
+    repo.write_file("pyproject.toml",'[project]\ndependencies=["requests>=2"]')
+    assert check_delivery(repo,s)["success"]
+    repo.write_file("pyproject.toml","[broken")
+    assert not check_delivery(repo,s)["success"]
+
+
+def test_dependency_manifest_follows_planned_includes(tmp_path):
+    from core.delivery import _manifest_dependency_names
+    from core.repo_manager import RepoManager
+    repo=RepoManager(str(tmp_path),{"requirements.txt","deps/base.txt"},{},git_enabled=False)
+    repo.write_file("requirements.txt","-r deps/base.txt\n-c constraints.txt")
+    repo.write_file("deps/base.txt","Requests>=2 # install\n")
+    assert _manifest_dependency_names(repo)=={"requests"}
+    repo.write_file("deps/base.txt","-r ../requirements.txt")
+    with pytest.raises(ValueError,match="Circular"):
+        _manifest_dependency_names(repo)

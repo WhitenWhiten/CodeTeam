@@ -151,6 +151,9 @@ class OpenAILLM(MeteredModel):
         raise ValueError("Failed to produce valid structured JSON after retries")
 
     def _record_structured_attempt(self, content, parsed, repair):
+        if repair:
+            from core.mechanism_state import count
+            count(self,"structured_json_repairs",repair_index=repair)
         try:
             first_pass = isinstance(json.loads(content), dict)
         except (ValueError, TypeError):
