@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 import numpy as np
+from copy import deepcopy
+from rag.information import information_record, make_packet, validate_packet
 
 LOG = logging.getLogger("rag")
 
@@ -57,6 +59,15 @@ class RAGClient:
         self.status = {"requested_backend": self.index_backend, "active_backend": "lexical", "fallback_reason": None}
         self.history = []
 
+        frozen = getattr(cfg, "frozen_packet_file", None)
+        self._frozen = validate_packet(json.loads(Path(frozen).read_text(encoding="utf-8-sig"))) if frozen else None
+        if self._frozen is not None:
+            if len(self._frozen["documents"]) > self.top_k or len(self._frozen["injected_text"]) > getattr(cfg,"max_injected_chars",24000):
+                raise ValueError("Frozen packet exceeds configured retrieval boundary")
+            self._chunks=[]
+            self._vector_ready=False
+            self.status.update(active_backend="frozen_packet",chunks=0)
+            return
         self._chunks = self._load_chunks()
         self.status["chunks"] = len(self._chunks)
         self._vector_ready = False
@@ -86,6 +97,12 @@ class RAGClient:
                 )
 
     def query(self, q: str) -> list[dict]:
+        if self._frozen is not None:
+            if self._frozen["query_sha256"] != hashlib.sha256(q.encode()).hexdigest():
+                raise ValueError("Frozen retrieval packet belongs to different requirements")
+            packet=deepcopy(self._frozen)
+            self.history.append({"query":q,"status":dict(self.status),"results":packet["documents"],"packet":packet})
+            return deepcopy(packet["documents"])
         if self._vector_ready:
             try:
                 results = self._query_vector(q)
@@ -98,8 +115,9 @@ class RAGClient:
                 results = self._query_lexical(q)
         else:
             results = self._query_lexical(q)
-        self.history.append({"query": q, "status": dict(self.status), "results": results})
-        return results
+        packet=make_packet(q,results,self.top_k,getattr(self.cfg,"max_injected_chars",24000))
+        self.history.append({"query": q, "status": dict(self.status), "results": results, "packet":packet})
+        return deepcopy(packet["documents"])
 
     def _load_chunks(self) -> List[Dict[str, Any]]:
         if not self.corpus_path.exists():
@@ -123,6 +141,7 @@ class RAGClient:
                         "chunk_id": chunk_id,
                         "tokens": tokens,
                         "fingerprint": set(_tokenize(text)),
+                        "design_information": information_record(item),
                     }
                 )
         if not chunks:
@@ -130,20 +149,15 @@ class RAGClient:
         return chunks
 
     def _compact_repo_text(self, item: Dict[str, Any]) -> str:
-        parts = []
-        readme = str(item.get("readme_summary") or item.get("summary") or item.get("readme") or "")
-        tree = str(item.get("file_tree") or item.get("tree") or "")
-        dependencies = str(item.get("dependencies") or item.get("dependency_manifest") or "")
-        roles = str(item.get("file_roles") or item.get("interfaces") or item.get("exports") or "")
-
-        if readme.strip():
-            parts.append("README summary:\n" + readme.strip())
-        if tree.strip():
-            parts.append("File tree pattern:\n" + tree.strip())
-        if dependencies.strip():
-            parts.append("Dependency hints:\n" + dependencies.strip())
-        if roles.strip():
-            parts.append("File-role/interface hints:\n" + roles.strip())
+        fields=information_record(item)
+        labels={"readme":"README summary" if fields["readme"]["source_field"] != "readme" else "README raw text",
+                "tree":"File tree pattern","dependencies":"Dependency hints","interfaces":"File-role/interface hints"}
+        parts=[]
+        for name,field in fields.items():
+            value=field["value"]
+            if field["available"]:
+                text=value if isinstance(value,str) else json.dumps(value,ensure_ascii=False)
+                parts.append(labels[name]+":\n"+text)
         return "\n\n".join(parts)
 
     def _chunk_text(self, text: str) -> List[str]:
@@ -151,7 +165,7 @@ class RAGClient:
         if not tokens:
             return []
         if len(tokens) <= self.chunk_tokens:
-            return [text[:6000].strip()]
+            return [text.strip()]
 
         raw_words = re.findall(r"\S+", text)
         approx_ratio = max(1, math.ceil(len(raw_words) / len(tokens)))
@@ -163,7 +177,7 @@ class RAGClient:
         for start in range(0, len(raw_words), step):
             chunk = " ".join(raw_words[start : start + window]).strip()
             if chunk:
-                chunks.append(chunk[:6000])
+                chunks.append(chunk)
             if start + window >= len(raw_words):
                 break
         return chunks
@@ -287,6 +301,7 @@ class RAGClient:
                     "text": chunk["text"],
                     "meta": {
                         "source": source,
+                        "design_information": chunk.get("design_information", {}),
                         "score": score,
                         "chunk_id": chunk["chunk_id"],
                         "retrieval_kind": retrieval_kind,

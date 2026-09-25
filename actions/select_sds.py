@@ -54,7 +54,8 @@ class SelectSDSAction(Action):
         return valid, errors
 
     def _render_rag(self, docs):
-        return "\n\n".join(d.get("text", "") for d in docs)
+        from rag.information import render_documents
+        return render_documents(docs)
 
     def _build_prompt(self, question, sds_list, rag_client=None):
         candidates, _ = self._valid_normalized_candidates(sds_list)

@@ -66,14 +66,8 @@ class GenerateSDSAction(Action):
         return ARCHITECT_PROMPT_FALLBACK
 
     def _render_rag(self, docs: List[Dict[str, Any]]) -> str:
-        if not docs:
-            return ""
-        parts = []
-        for i, d in enumerate(docs[:8], 1):
-            txt = d.get("text", "")
-            src = d.get("meta", {}).get("source", "")
-            parts.append(f"[{i}] {src}\n{txt}")
-        return "\n\n".join(parts)
+        from rag.information import render_documents
+        return render_documents(docs)
 
     def _build_prompt(
         self,

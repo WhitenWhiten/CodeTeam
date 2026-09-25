@@ -68,7 +68,7 @@ def make_plan(manifest):
                 cfg['developer_allocation']['assignment_seed'] = seed
                 if 'seed' in cfg['llm']:
                     cfg['llm']['seed'] = seed
-                for field in ('corpus_file', 'index_dir'):
+                for field in ('corpus_file', 'index_dir', 'frozen_packet_file'):
                     if cfg['rag'].get(field):
                         cfg['rag'][field] = str((manifest.parent / cfg['rag'][field]).resolve())
                 job = {'benchmark': spec.benchmark, 'task_id': task.task_id, 'difficulty': task.difficulty,

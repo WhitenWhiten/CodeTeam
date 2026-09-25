@@ -16,6 +16,8 @@ class RAGConfig(ConfigModel):
     index_dir: str = './rag'
     top_k: int = Field(default=5, ge=1)
     corpus_file: Optional[str] = None
+    frozen_packet_file: Optional[str] = None
+    max_injected_chars: int = Field(default=24000, ge=256)
     distinct_sources: bool = True
     similarity_threshold: float = Field(default=0.92, gt=0, le=1)
     embedding_model: str = 'BAAI/bge-m3'
