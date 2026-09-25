@@ -119,8 +119,10 @@ class OpenAILLM(MeteredModel):
             else:
                 raise ValueError(f"Unknown structured output schema: {schema}")
 
+        self.last_structured_trace = []
         content = await self._gen_json_once(prompt)
         parsed = self._safe_parse_json(content)
+        self._record_structured_attempt(content, parsed, 0)
         if schema_dict:
             ok, errs = self._validate(parsed, schema_dict, validator=named_validator)
             if ok:
@@ -135,6 +137,7 @@ class OpenAILLM(MeteredModel):
             repair_prompt = self._build_repair_prompt(last_msg, schema_dict)
             content = await self._gen_json_once(repair_prompt)
             parsed = self._safe_parse_json(content)
+            self._record_structured_attempt(content, parsed, i + 1)
             if schema_dict:
                 ok, errs = self._validate(parsed, schema_dict, validator=named_validator)
                 if ok:
@@ -145,6 +148,14 @@ class OpenAILLM(MeteredModel):
                     return parsed
                 last_msg = content
         raise ValueError("Failed to produce valid structured JSON after retries")
+
+    def _record_structured_attempt(self, content, parsed, repair):
+        try:
+            first_pass = isinstance(json.loads(content), dict)
+        except (ValueError, TypeError):
+            first_pass = False
+        self.last_structured_trace.append({"raw": content, "parsed": parsed,
+                                          "strict_json_parseable": first_pass, "repair_index": repair})
 
     async def files(self, prompt: str, max_retries: int = 3) -> Dict[str, str]:
         # Expect the model to return {"path": "content", ...}.

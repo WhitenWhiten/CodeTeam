@@ -6,7 +6,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M01: SDS semantics
 - [x] M02: Implementation contracts
 - [x] M03: Delivery completeness
-- [ ] M04: Candidate rejection
+- [x] M04: Candidate rejection
 - [ ] M05: CTO ranking
 - [ ] M06: Progressive QA
 - [ ] M07: Evidence-based routing
@@ -30,3 +30,5 @@ M02: Implemented AST signature/default/annotation checks before writes, static i
 
 M03: Added explicit static/QA producers, dependency-manifest requirement, required-file delivery gate and removal of temporary test placeholders. Batch A running.
 Batch A: 29 passed. Strict-contract fixtures now declare required annotations/manifests; delivered temporary QA paths have explicit absent checkpoint entries.
+
+M04: Candidate-local rejection now continues remaining Architects and persists every attempt, parsed/normalized payload and raw provider JSON-repair trace. Minimum valid pool is explicit. Batch B pending.

@@ -245,48 +245,39 @@ class MultiAgentCodegenWorkflowAsync:
     async def _collect_sds(self, question: str) -> List[Dict[str, Any]]:
         rag_client = self._rag_client()
         profiles = build_architect_profiles(self.ctx.cfg.architects, seed=getattr(self.ctx.cfg, "architect_seed", None))
-        sds_list: List[Dict[str, Any]] = []
-        traces: List[Dict[str, Any]] = []
-
-        async def one(a, profile, claimed_summary):
-            for _ in range(self.ctx.cfg.sds_retry + 1):
-                try:
-                    trace = await a.propose_sds(
-                        question,
-                        design_preference=profile.preference,
-                        claimed_summary=claimed_summary,
-                        return_trace=True,
-                    )
-                    sds_json = normalize_sds_candidate(trace["sds"])
-                    validate_sds(sds_json)
-                    trace["sds"] = sds_json
-                    return trace
-                except BudgetExceeded:
-                    raise
-                except (ValueError, TypeError, ValidationError) as exc:
-                    self.log.warning("Invalid SDS candidate: %s", exc)
-                    continue
-            raise RuntimeError("SDS generation failed")
-
+        sds_list, traces, attempts = [], [], []
         for profile in profiles:
             claimed_summary = update_claimed_summary(sds_list)
             arch = ArchitectAgent(name=profile.name, llm=self.ctx.llm, rag=rag_client)
-            result = await one(arch, profile, claimed_summary)
-            sds_list.append(result["sds"])
-            traces.append(
-                {
-                    "architect": profile.name,
-                    "design_preference": profile.preference,
-                    "claimed_summary": claimed_summary,
-                    "rag_docs": result.get("rag_docs", []),
-                    "sds": result["sds"],
-                }
-            )
-
-        if not sds_list:
-            raise RuntimeError("No valid SDS generated")
-        self._artifact_json("planning/architect_candidates.json", traces)
-        self.log.info(f"SDS collected: {len(sds_list)}")
+            for attempt in range(self.ctx.cfg.sds_retry + 1):
+                self._check_resource_limits()
+                record = {"architect": profile.name, "attempt": attempt + 1,
+                          "design_preference": profile.preference, "claimed_summary": claimed_summary}
+                try:
+                    trace = await arch.propose_sds(question, design_preference=profile.preference,
+                                                   claimed_summary=claimed_summary, return_trace=True)
+                    normalized = normalize_sds_candidate(trace["sds"])
+                    validate_sds(normalized)
+                    record.update(status="accepted", parsed=trace["sds"], normalized=normalized)
+                    sds_list.append(normalized)
+                    traces.append({**record, "candidate_id": f"candidate-{len(sds_list)-1:04d}",
+                                   "rag_docs": trace.get("rag_docs", []), "sds": normalized})
+                except BudgetExceeded:
+                    record.update(status="budget_exhausted")
+                    raise
+                except (ValueError, TypeError, ValidationError) as exc:
+                    record.update(status="rejected", error=f"{type(exc).__name__}: {exc}")
+                    self.log.warning("Rejected %s attempt %s: %s", profile.name, attempt + 1, exc)
+                finally:
+                    record["structured_responses"] = getattr(self.ctx.llm, "last_structured_trace", [])
+                    attempts.append(record)
+                    self._artifact_json("planning/candidate_attempts.json", attempts)
+                    self._artifact_json("planning/architect_candidates.json", traces)
+                if record["status"] == "accepted": break
+        minimum = getattr(self.ctx.cfg, "min_valid_candidates", 1)
+        if len(sds_list) < minimum:
+            raise ValueError(f"Insufficient valid SDS candidates: {len(sds_list)} < {minimum}")
+        self.log.info("SDS collected: %s (attempts=%s)", len(sds_list), len(attempts))
         return sds_list
 
     async def _execute(self, question: str) -> str:

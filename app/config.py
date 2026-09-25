@@ -57,6 +57,7 @@ class SystemConfig(ConfigModel):
     architects: int = Field(default=4, ge=1)
     architect_seed: Optional[int] = None
     sds_retry: int = Field(default=1, ge=0)
+    min_valid_candidates: int = Field(default=1, ge=1)
     max_rounds: int = Field(default=2, ge=0)
     max_wall_clock_seconds: Optional[float] = Field(default=None, gt=0)
     max_token_budget: Optional[int] = Field(default=None, ge=0)
