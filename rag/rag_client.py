@@ -5,6 +5,8 @@ import json
 import logging
 import math
 import re
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -14,7 +16,7 @@ LOG = logging.getLogger("rag")
 
 
 def _tokenize(text: str) -> List[str]:
-    return re.findall(r"[a-zA-Z0-9_]+", (text or "").lower())
+    return re.findall(r"\w+", (text or "").lower(), flags=re.UNICODE)
 
 
 def _l2_normalize(vectors: np.ndarray, eps: float = 1e-12) -> np.ndarray:
@@ -48,8 +50,15 @@ class RAGClient:
         self.embedding_model = str(getattr(cfg, "embedding_model", "BAAI/bge-m3"))
         self.index_backend = str(getattr(cfg, "index_backend", "faiss_hnsw")).lower()
         self.fallback_mode = str(getattr(cfg, "fallback_mode", "lexical")).lower()
+        if self.index_backend not in {"lexical", "faiss_hnsw"} or self.fallback_mode not in {"lexical", "error"}:
+            raise ValueError("Unsupported RAG backend or fallback mode")
+        if self.top_k < 1 or self.chunk_tokens < 1 or not 0 <= self.chunk_overlap < self.chunk_tokens or not 0 < self.similarity_threshold <= 1:
+            raise ValueError("Invalid RAG retrieval or chunk bounds")
+        self.status = {"requested_backend": self.index_backend, "active_backend": "lexical", "fallback_reason": None}
+        self.history = []
 
         self._chunks = self._load_chunks()
+        self.status["chunks"] = len(self._chunks)
         self._vector_ready = False
         self._index = None
         self._embeddings: np.ndarray | None = None
@@ -60,6 +69,7 @@ class RAGClient:
         elif self._chunks:
             try:
                 self._prepare_vector_index()
+                self.status["active_backend"] = "faiss_hnsw"
                 LOG.info(
                     "RAG vector backend active: model=%s index=faiss_hnsw chunks=%d",
                     self.embedding_model,
@@ -68,6 +78,7 @@ class RAGClient:
             except Exception as exc:
                 if self.fallback_mode != "lexical":
                     raise
+                self.status["fallback_reason"] = f"{type(exc).__name__}: {exc}"
                 LOG.warning(
                     "RAG vector backend unavailable (%s); falling back to lexical retrieval. "
                     "Install requirements-rag.txt or set CODETEAM_RAG_BACKEND=lexical to make this explicit.",
@@ -75,19 +86,27 @@ class RAGClient:
                 )
 
     def query(self, q: str) -> list[dict]:
-        if not self._chunks:
-            return []
         if self._vector_ready:
-            return self._query_vector(q)
-        return self._query_lexical(q)
+            try:
+                results = self._query_vector(q)
+            except Exception as exc:
+                if self.fallback_mode != "lexical":
+                    raise
+                self._vector_ready = False
+                self.status.update(active_backend="lexical", fallback_reason=f"{type(exc).__name__}: {exc}")
+                LOG.warning("RAG query fell back to lexical: %s", exc)
+                results = self._query_lexical(q)
+        else:
+            results = self._query_lexical(q)
+        self.history.append({"query": q, "status": dict(self.status), "results": results})
+        return results
 
     def _load_chunks(self) -> List[Dict[str, Any]]:
         if not self.corpus_path.exists():
-            return []
-        try:
-            raw_docs = json.loads(self.corpus_path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
+            raise FileNotFoundError(f"RAG corpus does not exist: {self.corpus_path}")
+        raw_docs = json.loads(self.corpus_path.read_text(encoding="utf-8-sig"))
+        if not isinstance(raw_docs, list) or any(not isinstance(item, dict) for item in raw_docs):
+            raise ValueError("RAG corpus must be an array of repository objects")
 
         chunks: List[Dict[str, Any]] = []
         for item in raw_docs:
@@ -106,6 +125,8 @@ class RAGClient:
                         "fingerprint": set(_tokenize(text)),
                     }
                 )
+        if not chunks:
+            raise ValueError("RAG corpus contains no usable design references")
         return chunks
 
     def _compact_repo_text(self, item: Dict[str, Any]) -> str:
@@ -162,13 +183,19 @@ class RAGClient:
                 show_progress_bar=False,
             )
             cached_embeddings = np.asarray(cached_embeddings, dtype="float32")
+            self._validate_embeddings(cached_embeddings, len(self._chunks))
             cached_embeddings = _l2_normalize(cached_embeddings)
             embeddings_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(embeddings_path, cached_embeddings)
-            meta_path.write_text(
-                json.dumps(self._chunk_cache_signature(), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            with tempfile.TemporaryDirectory(dir=embeddings_path.parent) as temporary:
+                temp_data = Path(temporary) / "vectors.npy"
+                temp_meta = Path(temporary) / "meta.json"
+                np.save(temp_data, cached_embeddings, allow_pickle=False)
+                metadata = {"signature": self._chunk_cache_signature(),
+                            "shape": list(cached_embeddings.shape),
+                            "sha256": hashlib.sha256(temp_data.read_bytes()).hexdigest()}
+                temp_meta.write_text(json.dumps(metadata), encoding="utf-8")
+                os.replace(temp_data, embeddings_path)
+                os.replace(temp_meta, meta_path)
 
         self._embeddings = np.asarray(cached_embeddings, dtype="float32")
         self._index = self._build_faiss_hnsw(self._embeddings)
@@ -214,14 +241,17 @@ class RAGClient:
             show_progress_bar=False,
         )
         query_embedding = _l2_normalize(np.asarray(query_embedding, dtype="float32"))
+        self._validate_embeddings(query_embedding, 1)
+        if query_embedding.shape[1] != self._embeddings.shape[1]:
+            raise ValueError("Query embedding dimension differs from the cached index")
         candidate_count = min(len(self._chunks), max(self.top_k * 8, self.top_k))
         scores, indexes = self._index.search(query_embedding, candidate_count)
         ranked = [
             (float(score), int(idx))
             for score, idx in zip(scores[0].tolist(), indexes[0].tolist())
-            if idx >= 0
+            if 0 <= idx < len(self._chunks) and math.isfinite(score)
         ]
-        return self._format_ranked_results(ranked, retrieval_kind="design_hint_vector")
+        return self._format_ranked_results(ranked)
 
     def _query_lexical(self, q: str) -> list[dict]:
         query_tokens = set(_tokenize(q))
@@ -235,10 +265,10 @@ class RAGClient:
                 continue
             ranked.append((float(overlap), idx))
         ranked.sort(key=lambda item: item[0], reverse=True)
-        return self._format_ranked_results(ranked, retrieval_kind="design_hint_lexical")
+        return self._format_ranked_results(ranked)
 
     def _format_ranked_results(
-        self, ranked: Sequence[tuple[float, int]], retrieval_kind: str
+        self, ranked: Sequence[tuple[float, int]], retrieval_kind: str = "design_hint"
     ) -> list[dict]:
         results = []
         seen_sources = set()
@@ -260,6 +290,7 @@ class RAGClient:
                         "score": score,
                         "chunk_id": chunk["chunk_id"],
                         "retrieval_kind": retrieval_kind,
+                        "fallback_reason": self.status["fallback_reason"],
                         "embedding_model": self.embedding_model if self._vector_ready else None,
                         "index_backend": "faiss_hnsw" if self._vector_ready else "lexical",
                     },
@@ -292,26 +323,37 @@ class RAGClient:
         name = f"{prefix}_{digest.hexdigest()[:16]}{suffix}"
         return self.index_dir / "collection" / "cache" / name
 
-    def _chunk_cache_signature(self) -> list[dict]:
-        return [
+    def _chunk_cache_signature(self) -> dict:
+        return {"version": 2, "embedding_model": self.embedding_model, "chunk_tokens": self.chunk_tokens,
+                "chunk_overlap": self.chunk_overlap, "chunks": [
             {
                 "source": chunk["source"],
                 "chunk_id": chunk["chunk_id"],
                 "text_hash": hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest(),
             }
             for chunk in self._chunks
-        ]
+        ]}
+
+    @staticmethod
+    def _validate_embeddings(embeddings, rows):
+        if embeddings.ndim != 2 or embeddings.shape[0] != rows or embeddings.shape[1] < 1:
+            raise ValueError("Invalid embedding matrix dimensions")
+        if not np.isfinite(embeddings).all() or (np.linalg.norm(embeddings, axis=1) < 1e-12).any():
+            raise ValueError("Embeddings must be finite and nonzero")
 
     def _load_cached_embeddings(self, embeddings_path: Path, meta_path: Path) -> np.ndarray | None:
         if not embeddings_path.exists() or not meta_path.exists():
             return None
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if meta != self._chunk_cache_signature():
+            if meta.get("signature") != self._chunk_cache_signature():
                 return None
-            embeddings = np.load(embeddings_path)
-            if embeddings.shape[0] != len(self._chunks):
+            if meta.get("sha256") != hashlib.sha256(embeddings_path.read_bytes()).hexdigest():
                 return None
-            return np.asarray(embeddings, dtype="float32")
+            embeddings = np.asarray(np.load(embeddings_path, allow_pickle=False), dtype="float32")
+            self._validate_embeddings(embeddings, len(self._chunks))
+            if list(embeddings.shape) != meta.get("shape"):
+                return None
+            return _l2_normalize(embeddings)
         except Exception:
             return None

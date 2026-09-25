@@ -85,8 +85,10 @@ class MultiAgentCodegenWorkflowAsync:
             self._artifact_json("repository/final.json", to_jsonable(self.result))
         return self.result
 
-    def _rag_client(self):
+    def _rag_client(self, role="architect"):
         if not getattr(self.ctx.cfg.rag, "enabled", False):
+            return None
+        if role not in getattr(self.ctx.cfg.rag, "roles", ["architect"]):
             return None
         return self.ctx.rag
 
@@ -145,7 +147,7 @@ class MultiAgentCodegenWorkflowAsync:
         self._check_resource_limits()
         self._set_stage("selection")
         with StageTimer(self.log, "cto_selection"):
-            cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
+            cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client("cto"))
             decision = await cto.choose(question, sds_list)
             self._artifact_json("planning/cto_decision.json", decision)
             chosen_sds = build_runtime_sds_json(

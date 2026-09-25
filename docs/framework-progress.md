@@ -10,7 +10,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T5: Dependency-aware verification and repair closure.
 - [x] T6: Model providers, cancellation, usage and budgets.
 - [x] T7: Workspace and Git collaboration semantics.
-- [ ] T8: RAG contracts, cache validation and observable fallback.
+- [x] T8: RAG contracts, cache validation and observable fallback.
 - [ ] T9: Configuration, durable run records and stage recovery.
 - [ ] T10: Integrated acceptance tests, packaging and usage documentation.
 
@@ -47,3 +47,8 @@ confined to the workspace; writes are atomic and initialization preserves files.
 Serialized Git branches start from current main, integrate by fast-forward only,
 and report staging/commit/integration failures. Tests exercise repeat agent turns,
 cross-owner denial, traversal aliases and a full clean Git-backed workflow.
+
+T8: Retrieval returns a stable design_hint contract with backend and fallback
+metadata. Architect-only retrieval is the default and roles are explicit. Invalid
+corpora fail clearly; vector caches validate content, dimensions and finite values.
+Atomic cache publication and recorded query history support audit and recovery.

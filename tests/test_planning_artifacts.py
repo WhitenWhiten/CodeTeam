@@ -69,6 +69,7 @@ class RAGFilteringTests(unittest.TestCase):
             client = RAGClient(
                 SimpleNamespace(
                     corpus_file=str(corpus),
+                    index_backend="lexical",
                     top_k=3,
                     distinct_sources=True,
                     similarity_threshold=0.99,

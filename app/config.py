@@ -7,6 +7,7 @@ from typing import List, Optional
 
 class RAGConfig(BaseModel):
     enabled: bool = False
+    roles: List[str] = ["architect"]
     index_dir: str = "./rag"
     top_k: int = 5
     corpus_file: Optional[str] = None
