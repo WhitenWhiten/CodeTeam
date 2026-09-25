@@ -42,6 +42,8 @@ class SDS:
     dev_plan: List[DevAssignment]
     constraints: Dict = field(default_factory=dict)
     notes: str = ""
+    schema_version: str = "1.0"
+    normalization_log: List[str] = field(default_factory=list)
 
 @dataclass
 class UpdateReason:

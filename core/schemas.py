@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Any, List, Set, Tuple
 from utils.sds_normalizer import normalize_sds_candidate
 from core.contracts import repository_path
+from core.interface_contracts import validate_interfaces, validate_runtime
 try:
     import jsonschema
 except ImportError:
@@ -13,6 +14,8 @@ SDS_SCHEMA: Dict[str, Any] = {
   "type": "object",
   "required": ["id", "problem", "tech_stack", "repo_structure", "file_specs", "dev_plan"],
   "properties": {
+    "schema_version": {"type": "string", "enum": ["1.0"]},
+    "normalization_log": {"type": "array", "items": {"type": "string"}},
     "id": {"type": "string"},
     "problem": {"type": "string", "minLength": 1},
     "tech_stack": {
@@ -275,10 +278,14 @@ def _resolve_dependency_targets(
         return True, {ref} if ref in spec_set else set()
 
     if ref in symbol_to_files:
+        if len(symbol_to_files[ref]) != 1:
+            raise ValueError(f"Ambiguous dependency symbol: {ref}; use a qualified file reference")
         return True, set(symbol_to_files[ref])
 
     callable_name = ref.split("(", 1)[0].strip()
     if callable_name in symbol_to_files:
+        if len(symbol_to_files[callable_name]) != 1:
+            raise ValueError(f"Ambiguous dependency symbol: {callable_name}")
         return True, set(symbol_to_files[callable_name])
 
     for sep in ("::", ":", "#"):
@@ -377,6 +384,9 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
         if assigned_owner != owner:
             raise ValueError(f"file_spec owner does not match dev_plan: {fs['path']} -> {owner} != {assigned_owner}")
 
+    for spec in sds_json["file_specs"]:
+        validate_interfaces(spec["interfaces"])
+    validate_runtime(sds_json["tech_stack"])
     symbol_to_files, file_symbols = _collect_declared_symbols(sds_json["file_specs"])
     graph = {path: set() for path in spec_set}
     for fs in sds_json["file_specs"]:

@@ -14,6 +14,10 @@ def normalize_sds_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
         return candidate
 
     normalized = deepcopy(candidate)
+    normalized.setdefault("schema_version", "1.0")
+    aliases = [f"{old}->{new}" for old, new in (("repo_tree", "repo_structure"), ("files", "file_specs"), ("developer_plan", "dev_plan")) if old in candidate]
+    if aliases:
+        normalized["normalization_log"] = sorted(set(normalized.get("normalization_log", []) + aliases))
     _move_alias(normalized, "repo_tree", "repo_structure")
     _move_alias(normalized, "files", "file_specs")
     _move_alias(normalized, "developer_plan", "dev_plan")
@@ -41,6 +45,8 @@ def normalize_sds_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
 
 def _move_alias(payload: Dict[str, Any], alias: str, canonical: str) -> None:
     alias_value = payload.pop(alias, None)
+    if alias_value is not None and canonical in payload and payload[canonical] != alias_value:
+        raise ValueError(f"Conflicting SDS aliases: {alias} and {canonical}")
     if canonical not in payload and alias_value is not None:
         payload[canonical] = alias_value
 
