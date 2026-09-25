@@ -68,6 +68,13 @@ See [the runtime guide](docs/runtime-guide.md) for configuration precedence,
 budgets, Git semantics, RAG setup, recovery and verification boundaries.
 The optional vector stack installs with python -m pip install -e ".[rag]".
 
+For reproducible task/condition/seed matrices, frozen artifacts, independent
+official evaluation and measured costs, see [the experiment guide](docs/experiment-guide.md)
+and the codeteam-experiment CLI. For separately trained Vanilla, CodeS and CodeTeam
+checkpoints with repository-level splits and matching checks, see
+[the SFT guide](docs/training-guide.md) and codeteam-sft. Real GPU training and
+benchmark runs remain separate from the included fixture and small-model tests.
+
 ## ⚙️ CodeTeam Workflow
 
 CodeTeam generates a repository from an empty workspace in three stages: planning, decision making, and implementation. First, the input requirements document is preprocessed from the project README. Then, multiple Architect Agents propose alternative software design sketches (SDSs). Each SDS specifies the repository file tree, key dependencies, public interfaces, cross-file dependencies, and a project-specific developer plan, including how many Developer Agents should be instantiated and which files each developer should own. When retrieval is enabled, the architects are additionally grounded with design-oriented references retrieved from a curated corpus of public GitHub repositories.

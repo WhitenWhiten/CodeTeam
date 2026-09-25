@@ -139,7 +139,8 @@ Requirements and model/RAG/Git/allocation identity must match. Externally modifi
 source, missing files or a dirty Git tree are rejected rather than overwritten.
 Token/call costs carry forward; outstanding reservations after a crash are charged
 conservatively. You may explicitly raise total resource/repair budgets. Wall time
-starts again per invocation. Work before design selection can be inspected in
+also carries forward, including conservatively charged unclosed crash intervals.
+Work before design selection can be inspected in
 traces but has no resumable implementation checkpoint.
 
 ## Verification and boundaries
@@ -158,8 +159,10 @@ entrypoint outside this checkout.
 Provider tests use fake async clients, and vector-index tests use fake embeddings.
 Live provider responses, model quality, downloaded embeddings and paper benchmark
 accuracy are not established by this suite. Passing model-generated QA tests does
-not establish performance on an independent upstream acceptance suite. SFT training
-and benchmark-data reproduction are outside these framework updates.
+not establish performance on an independent upstream acceptance suite. The added
+experiment-guide.md describes independent official evaluation; training-guide.md
+describes the separate matched SFT pipeline and its verification boundaries.
+Real benchmark scores and the full GPU training recipe require separate runs.
 
 The old roles.developer_agent.DeveloperAgent name aliases the async worker;
 thread-based orchestration is retired. roles.qa_agent.QAAgent shares the active QA

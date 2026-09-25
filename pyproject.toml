@@ -13,13 +13,17 @@ dependencies = ["pydantic>=2,<3", "jsonschema>=4", "openai>=1", "pytest>=7", "nu
 [project.optional-dependencies]
 rag = ["sentence-transformers", "faiss-cpu"]
 analysis = ["pandas", "openpyxl", "scipy"]
+training = ["torch>=2.6", "transformers==4.57.6", "peft==0.18.1", "accelerate==1.12.0"]
+training-gpu = ["bitsandbytes", "deepspeed"]
 
 [project.scripts]
 codeteam = "app.main:main"
 codeteam-experiment = "experiments.cli:main"
+codeteam-sft = "training.cli:main"
 
 [tool.setuptools]
-packages = ["app", "actions", "core", "orchestrator", "roles", "runtime_adapters", "utils", "rag", "prompts", "experiments"]
+packages = ["app", "actions", "core", "orchestrator", "roles", "runtime_adapters", "utils", "rag", "prompts", "experiments", "training"]
 
 [tool.setuptools.package-data]
 prompts = ["*.md"]
+training = ["examples/*.json"]

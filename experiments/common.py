@@ -32,7 +32,8 @@ def files_digest(root):
         if path.is_symlink() or not path.resolve().is_relative_to(root):
             raise ValueError(f'Artifact contains a link: {path}')
         if path.is_file():
-            files[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            with path.open('rb') as stream:
+                files[path.relative_to(root).as_posix()] = hashlib.file_digest(stream, 'sha256').hexdigest()
     return files
 
 def snapshot(source, destination):

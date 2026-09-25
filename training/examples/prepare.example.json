@@ -1,0 +1,11 @@
+{
+  "datasets": {"vanilla": "vanilla.jsonl", "codes": "codes.jsonl", "codeteam": "codeteam.jsonl"},
+  "output_dir": "prepared",
+  "tokenizer": "./base-model",
+  "seed": 42,
+  "validation_fraction": 0.05,
+  "max_sequence_length": 32768,
+  "token_tolerance_fraction": 0,
+  "exclude_repositories": [],
+  "exclude_content_sha256": []
+}

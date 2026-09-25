@@ -36,6 +36,9 @@ def main():
         if len(launchers) != 1:
             raise RuntimeError(f"Expected one installed console launcher, found: {launchers}")
         executable = launchers[0]
+        for command in ('codeteam-experiment', 'codeteam-sft'):
+            launcher = next(target.rglob(command + ('.exe' if os.name == 'nt' else '')))
+            assert 'usage:' in run([str(launcher), '--help'], root, env)
         result = json.loads(run([str(executable), "--provider", "mock", "--no-git", "--architects", "1", "--workspace", str(root / "work")], root, env))
         assert result["status"] == "success" and result["qa"]["counts"]["passed"] == 4
         print(json.dumps({"wheel": wheel.name, "installed_version": installed["version"], "packaged_prompts": installed["prompts"], "cli_status": result["status"], "passed": 4}))
