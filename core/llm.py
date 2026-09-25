@@ -25,7 +25,10 @@ class LLMClient:
             if schema == "SDS":
                 return self._mock_sds()
             if schema == "CTO_DECISION":
-                return {"chosen_index": 0, "rationale": "Mock chooses the first SDS"}
+                import json
+                from core.planning_contracts import CRITERIA
+                candidates = json.loads(prompt.split("CANDIDATES_JSON\n", 1)[1].split("\nEND_CANDIDATES", 1)[0])
+                return {"evaluations": [{"candidate_id": c["candidate_id"], "scores": {k: 2 for k in CRITERIA}, "rationale": "Deterministic mock rubric", "assumptions": []} for c in candidates]}
             if schema == "QA_TEST_BUNDLE":
                 return self._mock_test_bundle()
         # TODO: call the real LLM and parse JSON.

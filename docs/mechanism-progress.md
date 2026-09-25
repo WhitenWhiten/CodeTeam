@@ -7,7 +7,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M02: Implementation contracts
 - [x] M03: Delivery completeness
 - [x] M04: Candidate rejection
-- [ ] M05: CTO ranking
+- [x] M05: CTO ranking
 - [ ] M06: Progressive QA
 - [ ] M07: Evidence-based routing
 - [ ] M08: Minimal invalidation
@@ -32,3 +32,5 @@ M03: Added explicit static/QA producers, dependency-manifest requirement, requir
 Batch A: 29 passed. Strict-contract fixtures now declare required annotations/manifests; delivered temporary QA paths have explicit absent checkpoint entries.
 
 M04: Candidate-local rejection now continues remaining Architects and persists every attempt, parsed/normalized payload and raw provider JSON-repair trace. Minimum valid pool is explicit. Batch B pending.
+
+M05: CTO now scores every stable candidate ID; code ranks by total, assumptions and graph fan-out with deterministic ties. Invalid decisions retry explicitly; ranked fallback is recorded. Batch B pending.

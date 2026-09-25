@@ -15,102 +15,73 @@ except ImportError:
         async def run(self, *args, **kwargs):
             raise NotImplementedError
 
-CTO_PROMPT_FALLBACK = """You are the CTO. Your task is to choose, from multiple candidate SDS documents, the design that best fits the current requirements and is most suitable for execution by the current runtime.
+from core.planning_contracts import rank_candidates
 
-Output contract:
-- Output exactly one JSON object with this format: `{{"chosen_index": number, "rationale": string, "scores": {{"structural_validity": number, "interface_consistency": number, "implementability": number, "developer_plan": number}}}}`.
-- `scores` may be omitted for backward compatibility; if provided, each score must be 0, 1, or 2.
-- Do not output Markdown, code fences, explanations, comments, or any extra prefix/suffix text.
-
-Evaluation dimensions:
-- Feasibility: whether the design fully covers the user's requirements and can be implemented.
-- Consistency: whether `repo_structure`, `file_specs`, and `dev_plan` agree with each other and avoid obvious omissions or conflicts.
-- Testability: whether the test structure is organized around business modules, key flows, and boundary conditions instead of fixed template filenames.
-- Parallel-development friendliness: whether module responsibilities are clear and interfaces between Developers are explicit.
-- Implementation cost: whether the design avoids unnecessary complexity and overengineering while still satisfying the requirements.
-
-Executor constraints:
-- The current PoC supports only `python + pytest`.
-- If a candidate does not satisfy these executor constraints, prefer the highest-quality candidate that does.
-
-Decision requirements:
-- Choose only from the given SDS list; do not invent a new design.
-- When multiple designs are close, prefer the one with clearer structure, more stable interfaces, and a more natural test strategy.
-- Candidate SDS documents have already passed contract validation; `chosen_index` must be a valid index in the candidate SDS list.
-
+CTO_PROMPT_FALLBACK = """You are the CTO. Compare every candidate against the user requirements and executor constraints.
+Output one JSON object with evaluations, one row per candidate_id. Each row must contain candidate_id, scores, rationale, and assumptions (a list of undeclared assumptions, empty if none).
+Scores must contain exactly structural_validity, interface_consistency, implementability, developer_plan. Every score is an integer 0, 1, or 2. Justify the scores; do not select by candidate order.
+All candidates have already passed mechanical validation. Assess interface consistency, requirement coverage, implementability under dependencies/resources, and developer count/ownership. Supported execution: python + pytest.
+The runtime computes total and ranks by descending total, then fewer declared assumptions, lower maximum fan-out, fewer edges, original order. Do not return chosen_index or invent candidates.
 User requirements:
 {question}
-
-Candidate SDS list (JSON array):
+CANDIDATES_JSON
 {sds_list}
-
+END_CANDIDATES
 RAG references (optional):
 {rag_snippets}
 """
 
 class SelectSDSAction(Action):
     def __init__(self, llm=None):
-        try:
-            super().__init__()  # Compatible with metagpt.Action
-        except TypeError:
-        # Compatible with the local placeholder Action(name: str="")
-            super().__init__(name="SelectSDSAction")
+        try: super().__init__()
+        except TypeError: super().__init__(name="SelectSDSAction")
         self.llm = llm
 
-    def _load_prompt_template(self) -> str:
+    def _load_prompt_template(self):
         p = Path(__file__).resolve().parents[1] / "prompts" / "cto_prompt.md"
-        if p.exists():
-            return p.read_text(encoding="utf-8")
-        return CTO_PROMPT_FALLBACK
+        return p.read_text(encoding="utf-8") if p.exists() else CTO_PROMPT_FALLBACK
 
-    def _render_rag(self, docs: List[Dict[str, Any]]) -> str:
-        if not docs:
-            return ""
-        return "\n\n".join([d.get("text", "") for d in docs[:6]])
-
-    def _build_prompt(self, question: str, sds_list: List[Dict[str, Any]], rag_client=None) -> str:
-        rag_docs = rag_client.query(question) if rag_client else []
-        normalized_sds_list, _ = self._valid_normalized_candidates(sds_list)
-        tpl = self._load_prompt_template()
-        return tpl.format(
-            question=question,
-            sds_list=json.dumps(normalized_sds_list, ensure_ascii=False, indent=2),
-            rag_snippets=self._render_rag(rag_docs),
-        )
-
-    def _valid_normalized_candidates(self, sds_list: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
-        valid = []
-        errors = []
-        for idx, candidate in enumerate(sds_list):
+    def _valid_normalized_candidates(self, sds_list):
+        valid, errors = [], []
+        for index, candidate in enumerate(sds_list):
             try:
                 normalized = normalize_sds_candidate(candidate)
                 validate_sds(normalized)
+                valid.append({"candidate_id": f"candidate-{index:04d}", "source_index": index, "sds": normalized})
             except Exception as exc:
-                errors.append(f"candidate {idx}: {exc}")
-                continue
-            valid.append(normalized)
+                errors.append({"source_index": index, "reason": str(exc)})
         return valid, errors
 
-    def _chosen_index_or_fallback(self, result: Dict[str, Any], candidate_count: int) -> int:
-        try:
-            idx = int(result.get("chosen_index", 0))
-        except (TypeError, ValueError):
-            return 0
-        if idx < 0 or idx >= candidate_count:
-            return 0
-        return idx
+    def _render_rag(self, docs):
+        return "\n\n".join(d.get("text", "") for d in docs)
 
-    async def run(self, question: str, sds_list: List[Dict[str, Any]], rag_client=None) -> Dict[str, Any]:
-        valid_sds_list, errors = self._valid_normalized_candidates(sds_list)
-        if not valid_sds_list:
-            raise ValueError(f"no valid SDS candidates. errors={errors}")
+    def _build_prompt(self, question, sds_list, rag_client=None):
+        candidates, _ = self._valid_normalized_candidates(sds_list)
+        rag_docs = rag_client.query(question) if rag_client else []
+        return self._load_prompt_template().format(question=question,
+            sds_list=json.dumps(candidates, ensure_ascii=False, indent=2), rag_snippets=self._render_rag(rag_docs))
 
-        prompt = self._build_prompt(question, valid_sds_list, rag_client)
-        result = await self.llm.structured_json(prompt, schema="CTO_DECISION")
-        if not isinstance(result, dict):
-            result = {}
-        idx = self._chosen_index_or_fallback(result, len(valid_sds_list))
-        response = {"chosen_sds": valid_sds_list[idx], "rationale": result.get("rationale", "")}
-        if "scores" in result:
-            response["scores"] = result["scores"]
-        return response
+    async def run(self, question, sds_list, rag_client=None):
+        candidates, errors = self._valid_normalized_candidates(sds_list)
+        if not candidates: raise ValueError(f"no valid SDS candidates. errors={errors}")
+        prompt = self._build_prompt(question, sds_list, rag_client)
+        attempts = []
+        for attempt in range(3):
+            result = await self.llm.structured_json(prompt, schema="CTO_DECISION")
+            try:
+                ranked = rank_candidates(result, candidates)
+                break
+            except (ValueError, TypeError, __import__('jsonschema').ValidationError) as exc:
+                attempts.append({"response": result, "error": str(exc)})
+                if attempt == 2: raise ValueError(f"Invalid CTO ranking after retries: {exc}") from exc
+                prompt += "\nPrevious response rejected: " + str(exc) + "\nScore every listed candidate using the required contract."
+        lookup = {c["candidate_id"]: c for c in candidates}
+        for selected in ranked:
+            chosen = lookup[selected["candidate_id"]]["sds"]
+            try: validate_sds(chosen)
+            except Exception as exc:
+                errors.append({"candidate_id": selected["candidate_id"], "reason": str(exc)})
+                continue
+            return {"chosen_sds": chosen, "candidate_id": selected["candidate_id"], "rationale": selected["rationale"],
+                    "scores": selected["scores"], "ranking": ranked, "rejected_candidates": errors, "decision_retries": attempts}
+        raise ValueError("All ranked candidates failed final validation")

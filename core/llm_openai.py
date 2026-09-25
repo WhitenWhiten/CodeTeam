@@ -109,7 +109,8 @@ class OpenAILLM(MeteredModel):
                 schema_dict = SDS_SCHEMA
                 named_validator = validate_sds
             elif schema.upper() == "CTO_DECISION":
-                schema_dict = {"type":"object","required":["chosen_index"],"properties":{"chosen_index":{"type":"number"},"rationale":{"type":"string"}}}
+                from core.planning_contracts import CTO_DECISION_SCHEMA
+                schema_dict = CTO_DECISION_SCHEMA
             elif schema.upper() == "UPDATE_REASON":
                 schema_dict = UPDATE_REASON_SCHEMA
                 named_validator = validate_update_reason

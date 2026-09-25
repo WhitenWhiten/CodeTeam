@@ -174,18 +174,15 @@ class _DecisionLLM:
 
 
 class SelectSDSContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_cto_selection_filters_invalid_candidates_and_falls_back_to_first_valid(self):
+    async def test_cto_selection_rejects_invalid_decision_instead_of_silent_fallback(self):
         invalid = _valid_sds()
         invalid["id"] = "invalid"
         invalid["file_specs"][1]["dependencies"] = ["missing.py"]
         valid = _valid_sds()
         valid["id"] = "valid"
 
-        result = await SelectSDSAction(llm=_DecisionLLM()).run("build app", [invalid, valid])
-
-        self.assertEqual(result["chosen_sds"]["id"], "valid")
-        self.assertEqual(result["rationale"], "bad index should fall back")
-        self.assertEqual(result["scores"]["structural_validity"], 2)
+        with self.assertRaisesRegex(ValueError, "Invalid CTO ranking"):
+            await SelectSDSAction(llm=_DecisionLLM()).run("build app", [invalid, valid])
 
 
 if __name__ == "__main__":
