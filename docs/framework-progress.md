@@ -9,7 +9,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T4: QA execution, structured diagnostics, timeout cleanup.
 - [x] T5: Dependency-aware verification and repair closure.
 - [x] T6: Model providers, cancellation, usage and budgets.
-- [ ] T7: Workspace and Git collaboration semantics.
+- [x] T7: Workspace and Git collaboration semantics.
 - [ ] T8: RAG contracts, cache validation and observable fallback.
 - [ ] T9: Configuration, durable run records and stage recovery.
 - [ ] T10: Integrated acceptance tests, packaging and usage documentation.
@@ -41,3 +41,9 @@ requests reserve a conservative UTF-8 byte estimate plus output capacity; missin
 usage and interrupted requests retain that charge. Tests cover cancellation,
 concurrent admission, unknown usage, call limits and workflow budget propagation.
 No live model service is called by these tests.
+
+T7: Writes require both SDS membership and agent ownership. Canonical paths are
+confined to the workspace; writes are atomic and initialization preserves files.
+Serialized Git branches start from current main, integrate by fast-forward only,
+and report staging/commit/integration failures. Tests exercise repeat agent turns,
+cross-owner denial, traversal aliases and a full clean Git-backed workflow.

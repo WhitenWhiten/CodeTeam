@@ -6,6 +6,10 @@ import re
 import subprocess
 import shutil
 import threading
+import tempfile
+import hashlib
+from pathlib import Path
+from core.contracts import repository_path
 from contextlib import contextmanager
 
 class RepoManager:
@@ -16,10 +20,12 @@ class RepoManager:
         allowed_files_by_agent: Dict[str, Set[str]],
         git_enabled: bool = True,
     ):
-        self.root = root
-        self.allowed_files_all = allowed_files_all
-        self.allowed_files_by_agent = allowed_files_by_agent
+        self.root = str(Path(root).resolve())
+        self.allowed_files_all = {repository_path(p) for p in allowed_files_all}
+        self.allowed_files_by_agent = {agent: {repository_path(p) for p in paths} for agent, paths in allowed_files_by_agent.items()}
         self.git_enabled = git_enabled
+        if git_enabled and shutil.which("git") is None:
+            raise RuntimeError("Git collaboration requested but git is not installed")
         self._collaboration_lock = threading.RLock()
 
     @contextmanager
@@ -29,27 +35,19 @@ class RepoManager:
 
     def _relpath(self, path: str) -> str:
         # Normalize to a path relative to the repository root.
-        rel = os.path.relpath(path, self.root) if os.path.isabs(path) else path
-        return rel.replace("\\", "/")
+        rel = os.path.relpath(path, self.root) if os.path.isabs(path) else str(path)
+        rel = repository_path(rel)
+        resolved = (Path(self.root) / rel).resolve()
+        if not resolved.is_relative_to(Path(self.root)):
+            raise PermissionError(f"Path escapes repository: {path}")
+        return rel
 
     def _assert_allowed(self, rel_path: str, agent_id: Optional[str] = None):
-        norm = rel_path.replace("\\", "/")
-
-        # Global permissions expanded from SDS repo_structure.
-        if norm in self.allowed_files_all:
-            return
-
-        # Per-agent exact file permissions.
-        if agent_id:
-            agent_set = self.allowed_files_by_agent.get(agent_id, set())
-            if norm in agent_set:
-                return
-
-        # QA may write any file under tests/ without each file being declared in the SDS.
-        if agent_id == "QA" and (norm == "tests" or norm.startswith("tests/")):
-            return
-
-        raise PermissionError(f"Write denied: {norm} not declared in SDS repo_structure")
+        norm = self._relpath(rel_path)
+        if norm not in self.allowed_files_all:
+            raise PermissionError(f"Write denied: {norm} not declared in SDS repo_structure")
+        if agent_id is not None and norm not in self.allowed_files_by_agent.get(agent_id, set()):
+            raise PermissionError(f"Write denied: {norm} is not owned by {agent_id}")
 
     # Read/write API; writes are permission-checked.
     def write_file(self, path: str, content: str, agent_id: Optional[str] = None):
@@ -57,24 +55,24 @@ class RepoManager:
         self._assert_allowed(rel, agent_id)
         abspath = os.path.join(self.root, rel)
         os.makedirs(os.path.dirname(abspath), exist_ok=True)
-        with open(abspath, "w", encoding="utf-8") as f:
-            f.write(content)
+        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(abspath), prefix=".codeteam-write-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, abspath)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
     def append_file(self, path: str, content: str, agent_id: Optional[str] = None):
-        rel = self._relpath(path)
-        self._assert_allowed(rel, agent_id)
-        abspath = os.path.join(self.root, rel)
-        os.makedirs(os.path.dirname(abspath), exist_ok=True)
-        with open(abspath, "a", encoding="utf-8") as f:
-            f.write(content)
+        with self.collaboration_lock():
+            previous = self.read_file(path) if self.exists(path) else ""
+            self.write_file(path, previous + content, agent_id)
 
     def write_json(self, path: str, obj, agent_id: Optional[str] = None):
-        rel = self._relpath(path)
-        self._assert_allowed(rel, agent_id)
-        abspath = os.path.join(self.root, rel)
-        os.makedirs(os.path.dirname(abspath), exist_ok=True)
-        with open(abspath, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False, indent=2)
+        self.write_file(path, json.dumps(obj, ensure_ascii=False, indent=2), agent_id)
 
     # Reads and existence checks are unrestricted.
     def exists(self, path: str) -> bool:
@@ -128,6 +126,7 @@ class RepoManager:
             capture_output=True,
             text=True,
             check=check,
+            timeout=30,
         )
 
     def _current_branch(self) -> Optional[str]:
@@ -140,7 +139,8 @@ class RepoManager:
     def _agent_branch_name(self, agent_id: Optional[str]) -> str:
         raw = agent_id or "agent"
         safe = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-._")
-        return f"agent/{safe or 'agent'}"
+        suffix = hashlib.sha256(raw.encode()).hexdigest()[:8]
+        return f"agent/{safe or 'agent'}-{suffix}"
 
     def _default_branch(self) -> str:
         return "main"
@@ -162,14 +162,12 @@ class RepoManager:
             return branch
 
         exists = self._git("rev-parse", "--verify", branch, check=False)
-        try:
-            if exists.returncode == 0:
-                ret = self._git("checkout", branch, check=False)
-            else:
-                ret = self._git("checkout", "-b", branch, check=False)
-            return branch if ret.returncode == 0 else None
-        except subprocess.CalledProcessError:
-            return None
+        if exists.returncode == 0:
+            integrated = self._git("merge-base", "--is-ancestor", branch, self._default_branch(), check=False)
+            if integrated.returncode != 0:
+                raise RuntimeError(f"Agent branch has unintegrated changes: {branch}")
+        self._git("checkout", "-B", branch, self._default_branch())
+        return branch
 
     def checkout_agent_branch(self, agent_id: Optional[str]) -> Optional[str]:
         return self.ensure_agent_branch(agent_id)
@@ -188,17 +186,17 @@ class RepoManager:
 
         exists = self._git("rev-parse", "--verify", branch, check=False)
         if exists.returncode == 0:
-            ret = self._git("checkout", branch, check=False)
-            return branch if ret.returncode == 0 else current
+            self._git("checkout", branch)
+            return branch
 
         if current:
             create = self._git("branch", branch, check=False)
             if create.returncode == 0:
-                ret = self._git("checkout", branch, check=False)
-                return branch if ret.returncode == 0 else current
+                self._git("checkout", branch)
+                return branch
 
-        ret = self._git("checkout", "-b", branch, check=False)
-        return branch if ret.returncode == 0 else current
+        self._git("checkout", "-b", branch)
+        return branch
 
     def integrate_agent_branch(self, agent_id: Optional[str]) -> bool:
         if not self.git_enabled:
@@ -219,18 +217,20 @@ class RepoManager:
 
         merge = self._git(
             "merge",
-            "--no-ff",
+            "--ff-only",
             "--no-edit",
-            "-X",
-            "theirs",
             source_branch,
             check=False,
         )
-        return merge.returncode == 0
+        if merge.returncode != 0:
+            self._git("merge", "--abort", check=False)
+            raise RuntimeError(f"Cannot integrate {source_branch}: {merge.stderr.strip()}")
+        return True
 
     def cleanup_runtime_artifacts(self) -> None:
         root = os.path.abspath(self.root)
-        for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            dirnames[:] = [d for d in dirnames if d != ".git" and not Path(dirpath, d).is_symlink()]
             base = os.path.basename(dirpath)
             if base == ".git":
                 dirnames[:] = []
@@ -285,7 +285,9 @@ class RepoManager:
             return None
 
         self._ensure_git(author_name, author_email)
-        self._git("add", "-A")
+        self._git("add", "-A", "--", *sorted(self.allowed_files_all))
+        if self._git("rev-parse", "--verify", "HEAD", check=False).returncode == 0 and self._git("diff", "--cached", "--quiet", check=False).returncode == 0:
+            return self._git("rev-parse", "HEAD").stdout.strip()
 
         env = os.environ.copy()
         if author_name:
@@ -302,6 +304,7 @@ class RepoManager:
             text=True,
             check=True,
             env=env,
+            timeout=30,
         )
 
         try:
@@ -326,9 +329,9 @@ class RepoManager:
         os.makedirs(self.root, exist_ok=True)
 
         def _touch_file(abs_path: str, content: Optional[str] = None):
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write("" if content is None else str(content))
+            rel = self._relpath(abs_path)
+            if not self.exists(rel):
+                self.write_file(rel, "" if content is None else str(content))
 
         def _get(obj: Any, names: list[str], default=None):
             for n in names:
@@ -347,6 +350,7 @@ class RepoManager:
                 # String path.
                 if isinstance(item, str):
                     p_norm = item.replace("\\", "/")
+                    self._relpath(p_norm.rstrip("/"))
                     abs_path = os.path.join(self.root, p_norm)
                     if p_norm.endswith("/"):
                         os.makedirs(abs_path, exist_ok=True)
@@ -360,7 +364,10 @@ class RepoManager:
 
                 # Dictionary tree node.
                 if isinstance(item, dict):
-                    _init_from_tree(self.root, item)
+                    if "path" in item and "type" in item:
+                        _init_from_reponode(item, self.root)
+                    else:
+                        _init_from_tree(self.root, item)
                     continue
 
                 # RepoNode-like object.
@@ -374,6 +381,7 @@ class RepoManager:
             if isinstance(node, dict):
                 for name, child in node.items():
                     child_abs = os.path.join(base_abs, name)
+                    self._relpath(child_abs)
                     if isinstance(child, dict):
                         os.makedirs(child_abs, exist_ok=True)
                         _init_from_tree(child_abs, child)
@@ -393,6 +401,7 @@ class RepoManager:
                         # Child path relative to dir_abs.
                         p_norm = ch.replace("\\", "/")
                         abs_path = os.path.join(dir_abs, p_norm)
+                        self._relpath(abs_path.rstrip("/"))
                         if p_norm.endswith("/"):
                             os.makedirs(abs_path, exist_ok=True)
                         else:
@@ -403,7 +412,10 @@ class RepoManager:
                                 os.makedirs(abs_path, exist_ok=True)
                     elif isinstance(ch, dict):
                         # Treat this dict as a subtree attached to the current directory.
-                        _init_from_tree(dir_abs, ch)
+                        if "path" in ch and "type" in ch:
+                            _init_from_reponode(ch, dir_abs)
+                        else:
+                            _init_from_tree(dir_abs, ch)
                     elif _looks_like_reponode(ch):
                         _init_from_reponode(ch, dir_abs)
                     else:
@@ -427,6 +439,7 @@ class RepoManager:
             else:
                 raise ValueError("RepoNode must have either 'name' or 'path'")
 
+            self._relpath(abs_path)
             # Determine directory or file.
             is_dir = _get(node, ["is_dir"], None)
             if is_dir is None:
@@ -458,6 +471,9 @@ class RepoManager:
             _init_from_reponode(structure, self.root)
         else:
             raise TypeError("repo_structure must be a list/tuple/set of paths or a nested dict tree or a RepoNode-like object")
+        if self.git_enabled:
+            self.ensure_integration_branch()
+            self.commit_all("chore: initialize generated repository")
 
     def _symbol_names(self, symbols: Any) -> list[str]:
         if not isinstance(symbols, list):
@@ -532,6 +548,7 @@ class RepoManager:
             "compatibility_note": str(compatibility_note),
             "affected_dependent_files": affected_dependent_files,
             "rationale": record.get("rationale", ""),
+            "public_api_changed": bool(record.get("public_api_changed", False)),
             "related_files_brief_used": record.get("related_files_brief_used", []),
         }
         return self._json_safe(normalized)
@@ -570,16 +587,14 @@ class RepoManager:
             return None
 
         rel = self._relpath(path)
+        self._assert_allowed(rel, agent_id)
         self._ensure_git(author_name, author_email)
 
         # Build the commit message.
         msg = self._build_commit_message(rel, update_record, agent_id, message)
 
         # Stage only this file; if it does not exist or cannot be staged, return None.
-        try:
-            self._git("add", rel)
-        except subprocess.CalledProcessError:
-            return None
+        self._git("add", "--", rel)
 
         # Check this file for staged changes to avoid reading other workers' staged files.
         diff = self._git("diff", "--cached", "--name-only", "--", rel, check=False)
@@ -602,14 +617,15 @@ class RepoManager:
             text=True,
             check=False,
             env=env,
+            timeout=30,
         )
         if ret.returncode != 0:
-            # Common causes: empty commit or hook failure despite --no-verify.
-            return None
+            raise RuntimeError(f"Git commit failed for {rel}: {ret.stderr.strip()}")
 
         # Return current HEAD.
         res = self._git("rev-parse", "HEAD", check=False)
         commit_hash = res.stdout.strip() if res.returncode == 0 else None
-        if commit_hash and agent_id:
-            self.integrate_agent_branch(agent_id)
+        if commit_hash and agent_id and self._current_branch() == self._agent_branch_name(agent_id):
+            if not self.integrate_agent_branch(agent_id):
+                raise RuntimeError(f"Git integration failed for {agent_id}")
         return commit_hash

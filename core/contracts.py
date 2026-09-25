@@ -27,8 +27,9 @@ def repository_path(value: str) -> str:
     path = value.replace("\\", "/")
     parts = path.split("/")
     if (not path or PurePosixPath(path).is_absolute() or PureWindowsPath(path).drive
-            or any(p in {"", ".", "..", ".git", ".codeteam_qa"} for p in parts)
-            or any(":" in p or "\x00" in p for p in parts)):
+            or any(p.casefold() in {"", ".", "..", ".git", ".codeteam_qa"} for p in parts)
+            or any(p.endswith((".", " ")) or any(c in p for c in ':<>"|?*') or any(ord(c) < 32 for c in p) for p in parts)
+            or any(p.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]} for p in parts)):
         raise ValueError(f"Invalid repository-relative path: {value!r}")
     return path
 

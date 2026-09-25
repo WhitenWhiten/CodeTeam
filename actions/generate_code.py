@@ -270,7 +270,7 @@ class GenerateCodeAction(Action):
             # Delegate commit details to RepoManager.commit_file.
             repo_manager.commit_file(file_spec["path"], ur, agent_id)
             brief["latest_update_reason"] = ur
-            brief["compatibility_note"] = compatibility_note
+            brief["compatibility_note"] = ur["compatibility_note"]
             brief["typed_signatures"] = self._typed_signatures(brief)
             brief.setdefault("invariants", [])
             return brief
