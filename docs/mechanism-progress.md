@@ -4,7 +4,7 @@ Baseline: 2d9a4cb. Started 2026-09-25. Scope: M01-M16 in mechanism-audit-2026-09
 Each mechanism is committed separately. Acceptance runs are batched; a checked item means implemented, with validation results recorded below. Existing data/analysis changes are excluded.
 
 - [x] M01: SDS semantics
-- [ ] M02: Implementation contracts
+- [x] M02: Implementation contracts
 - [ ] M03: Delivery completeness
 - [ ] M04: Candidate rejection
 - [ ] M05: CTO ranking
@@ -25,3 +25,5 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 Pending.
 
 M01: Added versioned semantic validation, alias conflict rejection, unambiguous dependency resolution and syntactic declaration checks. Batch A acceptance pending.
+
+M02: Implemented AST signature/default/annotation checks before writes, static internal import checks, and explicit unresolved dynamic import reports. Batch A pending.

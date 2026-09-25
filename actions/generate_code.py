@@ -15,6 +15,8 @@ except ImportError:
             raise NotImplementedError
 
 from core.ast_utils import to_brief
+from core.interface_contracts import validate_implementation, validate_import_contract
+from core.dependencies import resolve_file_dependencies
 from core.text_utils import strip_code_fences
 
 DEV_PROMPT_FALLBACK = """# FILE_PATH: {file_path}
@@ -106,7 +108,11 @@ class GenerateCodeAction(Action):
             raise ValueError("Generated file is empty")
         if not file_spec["path"].endswith(".py"):
             return {"functions": [], "classes": []}
+        tree = validate_implementation(code, file_spec["interfaces"])
         brief = to_brief(code)
+        if getattr(self, "repo_specs", None):
+            deps = resolve_file_dependencies(self.repo_specs, getattr(self, "repo_files", None))
+            brief["import_check"] = validate_import_contract(tree, file_spec["path"], self.repo_files, deps[file_spec["path"]])
         for kind in ("functions", "classes"):
             actual = {item["name"]: item for item in brief[kind]}
             for expected in file_spec["interfaces"].get(kind, []):

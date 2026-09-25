@@ -22,6 +22,8 @@ class DeveloperWorkerAsync:
         self.log = get_logger(f"dev.{agent_id}")
 
         self._gen = GenerateCodeAction(llm=llm)
+        self._gen.repo_specs = list(sds_map.values())
+        self._gen.repo_files = list(getattr(repo_manager, "allowed_files_all", sds_map))
         self._req = RequestBriefingAction()
 
     async def start(self):
