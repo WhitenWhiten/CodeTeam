@@ -13,7 +13,7 @@ class DeveloperWorkerAsync:
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
         self.sds_map = sds_map
-        self.dependencies = resolve_file_dependencies(list(sds_map.values()))
+        self.dependencies = resolve_file_dependencies(list(sds_map.values()), getattr(repo_manager, "allowed_files_all", None))
         self.llm = llm
         self.repo = repo_manager
         self.briefs = brief_manager

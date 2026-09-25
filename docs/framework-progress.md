@@ -7,7 +7,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T2: One workflow engine and explicit lifecycle results.
 - [x] T3: Developer context, source-preserving repair, interface changes.
 - [x] T4: QA execution, structured diagnostics, timeout cleanup.
-- [ ] T5: Dependency-aware verification and repair closure.
+- [x] T5: Dependency-aware verification and repair closure.
 - [ ] T6: Model providers, cancellation, usage and budgets.
 - [ ] T7: Workspace and Git collaboration semantics.
 - [ ] T8: RAG contracts, cache validation and observable fallback.
@@ -29,3 +29,8 @@ Repairs use complete-file replacements with bounded validation retries.
 T4: Both adapters share structured JUnit parsing and Python module execution.
 Checks exercise pass/fail, collection errors, zero tests and subprocess timeout.
 Setup/environment failures are not routed as source-code defects.
+
+T5: Batch tests run only when their declared source dependencies are ready.
+Symbol aliases participate in scheduling; changed APIs invalidate completed
+consumers. Real pytest integration covers final repair verification, zero repair
+budget and detection of unchanged failing code.

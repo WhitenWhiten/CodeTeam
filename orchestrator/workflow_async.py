@@ -2,6 +2,8 @@
 from __future__ import annotations
 import asyncio
 import time
+import hashlib
+import json
 from typing import Dict, Any, List, Set, Mapping
 from roles.architect_agent import ArchitectAgent
 from roles.cto_agent import CTOAgent
@@ -10,7 +12,7 @@ from roles.qa_agent_async import QAAgentAsync
 from core.repo_manager import RepoManager
 from core.brief_manager import BriefManager
 from core.schemas import validate_sds
-from core.contracts import BudgetExceeded, RunResult, RunStatus, to_jsonable
+from core.contracts import BudgetExceeded, RunResult, RunStatus, ValidationStopped, to_jsonable
 from utils.sds_parser import parse_sds
 from utils.sds_normalizer import normalize_sds_candidate
 from utils.allowed_files import flatten_repo_structure
@@ -30,6 +32,8 @@ class MultiAgentCodegenWorkflowAsync:
         self._dev_tasks = []
         self.result = None
         self._repo = None
+        self._verification_count = 0
+        self._failed_states = set()
 
     def _set_stage(self, stage):
         self.result.stage = stage
@@ -41,6 +45,8 @@ class MultiAgentCodegenWorkflowAsync:
         self._started_at = time.monotonic()
         self._dev_tasks = []
         self._repo = None
+        self._verification_count = 0
+        self._failed_states = set()
         artifacts = getattr(self.ctx, "artifacts", None)
         self.result = RunResult(RunStatus.ERROR, artifacts_dir=str(artifacts.root) if artifacts and artifacts.root else None)
         try:
@@ -53,6 +59,9 @@ class MultiAgentCodegenWorkflowAsync:
                 self.result.reason = "Repository has not passed final validation"
         except BudgetExceeded as exc:
             self.result.status = RunStatus.BUDGET_EXHAUSTED
+            self.result.reason = str(exc)
+        except ValidationStopped as exc:
+            self.result.status = RunStatus.VALIDATION_FAILED
             self.result.reason = str(exc)
         except TimeoutError as exc:
             self.result.status = RunStatus.BUDGET_EXHAUSTED
@@ -185,28 +194,18 @@ class MultiAgentCodegenWorkflowAsync:
         # Initial implementation round.
         self._set_stage("implementation")
         with StageTimer(self.log, "dev_round_initial"):
-            await self._run_scheduled_dev_tasks(bus, scheduler)
+            await self._run_scheduled_dev_tasks(bus, scheduler, qa=qa)
         self._check_resource_limits()
 
-        # Fix iterations.
+        # Every final mutation is followed by a full test run. max_rounds bounds repairs.
         with StageTimer(self.log, "qa_and_fix_loops"):
-            for rnd in range(self.ctx.cfg.max_rounds):
-                self._check_resource_limits()
-                self._set_stage("validation")
-                result = await qa.run_and_feedback()
-                self.result.qa = result
-                self._artifact_json(f"qa/round_{rnd}.json", result)
-                if result.get("success", False):
-                    self.log.info(f"all tests passed at round {rnd}")
-                    break
-                fixes = result.get("fix_suggestions", [])
+            while True:
+                fixes = await self._verify(qa, scheduler)
                 if not fixes:
-                    self.log.warning("no fix suggestions; stopping")
                     break
                 fix_payloads = scheduler.requeue_from_fixes(fixes)
                 self._set_stage("repair")
                 self.result.qa = None
-                self.result.repairs += 1
                 await self._run_scheduled_dev_tasks(bus, scheduler, payloads=fix_payloads)
                 self._check_resource_limits()
 
@@ -219,6 +218,34 @@ class MultiAgentCodegenWorkflowAsync:
             finalize_repo()
         self._set_stage("finished")
         return str(repo.root)
+
+    async def _verify(self, qa, scheduler, partial=False):
+        self._check_resource_limits()
+        self._set_stage("validation")
+        result = await qa.run_and_feedback(completed_files=scheduler.completed if partial else None)
+        result["scope"] = "batch" if partial else "full"
+        self._artifact_json(f"qa/round_{self._verification_count}.json", result)
+        self._verification_count += 1
+        if result.get("status") == "deferred" and partial:
+            return []
+        self.result.qa = result
+        if result.get("success"):
+            return []
+        failures = [{k: f.get(k) for k in ("nodeid", "file_path", "category", "message")} for f in result.get("failures", [])]
+        digest = hashlib.sha256(json.dumps(failures, sort_keys=True).encode())
+        for path in scheduler.files:
+            digest.update(self._repo.read_bytes(path))
+        fingerprint = digest.hexdigest()
+        if fingerprint in self._failed_states:
+            raise ValidationStopped("Repair made no progress: unchanged sources and repeated failures")
+        self._failed_states.add(fingerprint)
+        if self.result.repairs >= self.ctx.cfg.max_rounds:
+            raise ValidationStopped("Repair limit reached; final validation still fails")
+        fixes = result.get("fix_suggestions", [])
+        if not fixes:
+            raise ValidationStopped(f"No actionable source repair for {result.get('status', 'test failure')}")
+        self.result.repairs += 1
+        return fixes
 
     def _artifact_json(self, path: str, payload: Any) -> None:
         artifacts = getattr(self.ctx, "artifacts", None)
@@ -246,25 +273,38 @@ class MultiAgentCodegenWorkflowAsync:
         scheduler: DependencyScheduler,
         payloads: Mapping[str, Dict[str, Any]] | None = None,
         timeout: float = 600,
+        qa=None,
     ) -> None:
-        payloads = payloads or {}
+        payloads = dict(payloads or {})
         while scheduler.has_work():
             self._check_resource_limits()
-            for item in scheduler.dispatch_ready():
+            batch = scheduler.dispatch_ready()
+            for item in batch:
                 payload = dict(payloads.get(item.file_path, {"type": "implement"}))
                 payload["file_path"] = item.file_path
                 await bus.emit(f"dev_task:{item.owner}", payload)
 
             scheduler.assert_can_progress()
-            try:
-                done = await bus.take("dev_done", timeout=timeout)
-            except asyncio.TimeoutError as exc:
-                running = scheduler.running_files()
-                raise TimeoutError(f"Developers round timeout; running={running}") from exc
-
-            file_path = done.get("file") if isinstance(done, dict) else None
-            if not file_path:
-                raise RuntimeError(f"Malformed dev_done event: {done!r}")
-            scheduler.complete(file_path)
-            if isinstance(done, dict) and done.get("error"):
-                raise RuntimeError(f"Developer failed for {file_path}: {done['error']}")
+            changed = []
+            for _ in batch:
+                try:
+                    done = await bus.take("dev_done", timeout=timeout)
+                except asyncio.TimeoutError as exc:
+                    raise RuntimeError(f"Developers timed out; running={scheduler.running_files()}") from exc
+                file_path = done.get("file") if isinstance(done, dict) else None
+                if not file_path or done.get("error"):
+                    raise RuntimeError(f"Developer failed: {done!r}")
+                scheduler.complete(file_path)
+                if done.get("update_reason", {}).get("public_api_changed"):
+                    changed.append(file_path)
+            for path in changed:
+                stale = set(scheduler.transitive_dependents(path)) & scheduler.completed
+                scheduler.requeue_files(stale)
+                for dependent in stale:
+                    payloads[dependent] = {"type": "fix", "issues": {"upstream_file": path, "reason": "Upstream interface changed"}}
+            if qa is not None:
+                fixes = await self._verify(qa, scheduler, partial=True)
+                if fixes:
+                    payloads.update(scheduler.requeue_from_fixes(fixes))
+                    self.result.qa = None
+            self._set_stage("implementation")

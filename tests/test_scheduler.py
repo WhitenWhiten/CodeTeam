@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from orchestrator.workflow_async import MultiAgentCodegenWorkflowAsync
 from orchestrator.scheduler import DependencyScheduler, SchedulerError
+from core.contracts import BudgetExceeded
 
 
 def spec(path: str, dependencies: list[str] | None = None) -> dict:
@@ -115,7 +116,7 @@ class WorkflowBudgetTests(unittest.TestCase):
         wf = MultiAgentCodegenWorkflowAsync(SimpleNamespace(cfg=cfg, llm=llm))
         wf._started_at -= 2
 
-        with self.assertRaisesRegex(TimeoutError, "wall-clock budget"):
+        with self.assertRaisesRegex(BudgetExceeded, "wall-clock budget"):
             wf._check_resource_limits()
 
 

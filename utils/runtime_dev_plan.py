@@ -45,8 +45,11 @@ def build_runtime_sds_json(
     )
     runtime_sds["dev_plan"] = [
         {"developer_id": item.developer_id, "file_paths": list(item.file_paths)}
-        for item in runtime_dev_plan
+        for item in runtime_dev_plan if item.file_paths
     ]
+    owners = {p: a["developer_id"] for a in runtime_sds["dev_plan"] for p in a["file_paths"]}
+    for spec in runtime_sds.get("file_specs", []):
+        spec["owner"] = owners[spec["path"]]
 
     notes = runtime_sds.get("notes", "").strip()
     override_note = (

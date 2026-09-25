@@ -66,6 +66,10 @@ class BudgetExceeded(RuntimeError):
     """A configured resource ceiling prevented further work."""
 
 
+class ValidationStopped(RuntimeError):
+    """Validation could not converge under the configured repair policy."""
+
+
 @dataclass
 class RunResult:
     status: RunStatus

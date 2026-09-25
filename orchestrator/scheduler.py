@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set, Tuple
+from core.dependencies import resolve_file_dependencies
 
 
 class SchedulerError(RuntimeError):
@@ -58,10 +59,11 @@ class DependencyScheduler:
         self.file_set: Set[str] = set(self.files)
         self.dependencies: Dict[str, Set[str]] = {}
         self.ignored_dependencies: Dict[str, Set[str]] = {}
+        resolved = resolve_file_dependencies(file_specs, strict=False)
         for fs in file_specs:
             path = _normalize_path(_get_value(fs, "path", ""))
             deps = {_normalize_path(dep) for dep in _get_value(fs, "dependencies", []) or []}
-            internal = {dep for dep in deps if dep in self.file_set}
+            internal = resolved[path]
             self.dependencies[path] = internal
             self.ignored_dependencies[path] = deps - internal
 
@@ -125,6 +127,16 @@ class DependencyScheduler:
         if path not in self.file_set:
             raise SchedulerError(f"unknown scheduled file: {file_path}")
         return sorted(self.dependents[path], key=lambda item: self.order[item])
+
+    def transitive_dependents(self, file_path):
+        seen = set()
+        pending = list(self.direct_dependents(file_path))
+        while pending:
+            path = pending.pop()
+            if path not in seen:
+                seen.add(path)
+                pending.extend(self.dependents[path])
+        return sorted(seen, key=lambda path: self.order[path])
 
     def ready_files(self, owner: str | None = None) -> List[str]:
         owner_filter = str(owner).strip() if owner is not None else None
@@ -209,7 +221,7 @@ class DependencyScheduler:
             )
             affected_dependents = self._affected_dependents(fix, issues)
             if public_api_changed:
-                affected_dependents.extend(self.direct_dependents(file_path))
+                affected_dependents.extend(self.transitive_dependents(file_path))
 
             for dependent in affected_dependents:
                 dependent_path = _normalize_path(dependent)
