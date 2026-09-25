@@ -10,7 +10,7 @@ from roles.qa_agent_async import QAAgentAsync
 from core.repo_manager import RepoManager
 from core.brief_manager import BriefManager
 from core.schemas import validate_sds
-from core.contracts import to_jsonable
+from core.contracts import BudgetExceeded, RunResult, RunStatus, to_jsonable
 from utils.sds_parser import parse_sds
 from utils.sds_normalizer import normalize_sds_candidate
 from utils.allowed_files import flatten_repo_structure
@@ -26,6 +26,55 @@ class MultiAgentCodegenWorkflowAsync:
         self.ctx = ctx
         self.log = get_logger("workflow")
         self._started_at = time.monotonic()
+        self._running = False
+        self._dev_tasks = []
+        self.result = None
+        self._repo = None
+
+    def _set_stage(self, stage):
+        self.result.stage = stage
+
+    async def run(self, question: str) -> RunResult:
+        if self._running:
+            raise RuntimeError("A workflow instance cannot run concurrently")
+        self._running = True
+        self._started_at = time.monotonic()
+        self._dev_tasks = []
+        self._repo = None
+        artifacts = getattr(self.ctx, "artifacts", None)
+        self.result = RunResult(RunStatus.ERROR, artifacts_dir=str(artifacts.root) if artifacts and artifacts.root else None)
+        try:
+            limit = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)
+            async with asyncio.timeout(limit):
+                await self._execute(question)
+            self.result.status = (RunStatus.SUCCESS if self.result.qa and self.result.qa.get("success")
+                                  else RunStatus.VALIDATION_FAILED)
+            if not self.result.success and not self.result.reason:
+                self.result.reason = "Repository has not passed final validation"
+        except BudgetExceeded as exc:
+            self.result.status = RunStatus.BUDGET_EXHAUSTED
+            self.result.reason = str(exc)
+        except TimeoutError as exc:
+            self.result.status = RunStatus.BUDGET_EXHAUSTED
+            self.result.reason = str(exc) or "Workflow wall-clock limit exceeded"
+        except asyncio.CancelledError:
+            self.result.status = RunStatus.CANCELLED
+            self.result.reason = "Run cancelled"
+            raise
+        except Exception as exc:
+            self.result.status = RunStatus.ERROR
+            self.result.reason = f"{type(exc).__name__}: {exc}"
+            self.log.exception("workflow failed")
+        finally:
+            for task in self._dev_tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*self._dev_tasks, return_exceptions=True)
+            if self._repo is not None:
+                self._repo.cleanup_runtime_artifacts()
+            self._running = False
+            self._artifact_json("repository/final.json", to_jsonable(self.result))
+        return self.result
 
     def _rag_client(self):
         if not getattr(self.ctx.cfg.rag, "enabled", False):
@@ -76,12 +125,14 @@ class MultiAgentCodegenWorkflowAsync:
         self.log.info(f"SDS collected: {len(sds_list)}")
         return sds_list
 
-    async def run(self, question: str) -> str:
+    async def _execute(self, question: str) -> str:
         self._check_resource_limits()
         self._artifact_text("requirements/normalized_requirements.md", question)
+        self._set_stage("planning")
         with StageTimer(self.log, "architect_phase"):
             sds_list = await self._collect_sds(question)
         self._check_resource_limits()
+        self._set_stage("selection")
         with StageTimer(self.log, "cto_selection"):
             cto = CTOAgent(llm=self.ctx.llm, rag=self._rag_client())
             decision = await cto.choose(question, sds_list)
@@ -111,6 +162,9 @@ class MultiAgentCodegenWorkflowAsync:
             git_enabled=self.ctx.cfg.git.enabled,
         )
         repo.init_structure(sds.repo_structure)
+        self._repo = repo
+        self.result.repo_root = repo_root
+        self._set_stage("initialization")
         self._artifact_json("repository/repo_root.json", {"repo_root": repo_root})
         brief_mgr = BriefManager()
         bus = AsyncEventBus()
@@ -121,7 +175,7 @@ class MultiAgentCodegenWorkflowAsync:
 
         sds_map: Dict[str, dict] = {fs.path: to_jsonable(fs) for fs in sds.file_specs}
 
-        dev_tasks = []
+        dev_tasks = self._dev_tasks
         for a in sds.dev_plan:
             worker = DeveloperWorkerAsync(a.developer_id, a.file_paths, sds_map, self.ctx.llm, repo, brief_mgr, bus)
             dev_tasks.append(await worker.start())
@@ -129,6 +183,7 @@ class MultiAgentCodegenWorkflowAsync:
         scheduler = DependencyScheduler(sds)
 
         # Initial implementation round.
+        self._set_stage("implementation")
         with StageTimer(self.log, "dev_round_initial"):
             await self._run_scheduled_dev_tasks(bus, scheduler)
         self._check_resource_limits()
@@ -137,7 +192,9 @@ class MultiAgentCodegenWorkflowAsync:
         with StageTimer(self.log, "qa_and_fix_loops"):
             for rnd in range(self.ctx.cfg.max_rounds):
                 self._check_resource_limits()
+                self._set_stage("validation")
                 result = await qa.run_and_feedback()
+                self.result.qa = result
                 self._artifact_json(f"qa/round_{rnd}.json", result)
                 if result.get("success", False):
                     self.log.info(f"all tests passed at round {rnd}")
@@ -147,6 +204,9 @@ class MultiAgentCodegenWorkflowAsync:
                     self.log.warning("no fix suggestions; stopping")
                     break
                 fix_payloads = scheduler.requeue_from_fixes(fixes)
+                self._set_stage("repair")
+                self.result.qa = None
+                self.result.repairs += 1
                 await self._run_scheduled_dev_tasks(bus, scheduler, payloads=fix_payloads)
                 self._check_resource_limits()
 
@@ -157,7 +217,7 @@ class MultiAgentCodegenWorkflowAsync:
         finalize_repo = getattr(repo, "finalize_output_repository", None)
         if finalize_repo:
             finalize_repo()
-        self._artifact_json("repository/final.json", {"repo_root": str(repo.root)})
+        self._set_stage("finished")
         return str(repo.root)
 
     def _artifact_json(self, path: str, payload: Any) -> None:
@@ -173,12 +233,12 @@ class MultiAgentCodegenWorkflowAsync:
     def _check_resource_limits(self) -> None:
         max_wall = getattr(self.ctx.cfg, "max_wall_clock_seconds", None)
         if max_wall is not None and time.monotonic() - self._started_at > max_wall:
-            raise TimeoutError(f"CodeTeam wall-clock budget exceeded: {max_wall}s")
+            raise BudgetExceeded(f"CodeTeam wall-clock budget exceeded: {max_wall}s")
 
         max_tokens = getattr(self.ctx.cfg, "max_token_budget", None)
         total_tokens = getattr(self.ctx.llm, "total_tokens", None)
         if max_tokens is not None and isinstance(total_tokens, int) and total_tokens > max_tokens:
-            raise RuntimeError(f"CodeTeam token budget exceeded: {total_tokens}>{max_tokens}")
+            raise BudgetExceeded(f"CodeTeam token budget exceeded: {total_tokens}>{max_tokens}")
 
     async def _run_scheduled_dev_tasks(
         self,

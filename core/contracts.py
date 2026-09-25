@@ -62,6 +62,10 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class BudgetExceeded(RuntimeError):
+    """A configured resource ceiling prevented further work."""
+
+
 @dataclass
 class RunResult:
     status: RunStatus

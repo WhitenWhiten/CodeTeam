@@ -1,5 +1,7 @@
 # app/main_async.py
 import asyncio
+import json
+from core.contracts import to_jsonable
 from app.config import load_config
 from app.bootstrap import bootstrap
 from core.requirements_preprocessor import load_requirements_text, preprocess_requirements
@@ -12,8 +14,9 @@ async def amain():
     question = load_requirements_text(cfg.requirements_file, cfg.user_question)
     if cfg.preprocess_requirements:
         question = preprocess_requirements(question)
-    repo_path = await wf.run(question=question)
-    print(f"Done. Repo at: {repo_path}")
+    result = await wf.run(question=question)
+    print(json.dumps(to_jsonable(result), ensure_ascii=False, indent=2))
+    return 0 if result.success else 1
 
 if __name__ == "__main__":
-    asyncio.run(amain())
+    raise SystemExit(asyncio.run(amain()))

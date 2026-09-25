@@ -4,7 +4,7 @@ Scope: CodeTeam runtime only. Experimental result data and analysis are excluded
 Each task is implemented, checked, and committed separately.
 
 - [x] T1: Canonical SDS and message contracts; nested class serialization.
-- [ ] T2: One workflow engine and explicit lifecycle results.
+- [x] T2: One workflow engine and explicit lifecycle results.
 - [ ] T3: Developer context, source-preserving repair, interface changes.
 - [ ] T4: QA execution, structured diagnostics, timeout cleanup.
 - [ ] T5: Dependency-aware verification and repair closure.
@@ -18,3 +18,6 @@ Each task is implemented, checked, and committed separately.
 
 T1: Contract tests cover nested methods through prompt rendering, invalid paths,
 duplicate owners, JSON serialization and same-file symbol references.
+
+T2: Lifecycle checks cover shared entrypoints, structured failures, worker cleanup,
+wall-clock interruption and cancellation propagation.
