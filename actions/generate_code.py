@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import json
+import hashlib
 from typing import Dict, Any, Optional
 
 try:
@@ -210,6 +211,8 @@ class GenerateCodeAction(Action):
 
     async def run(self, file_spec: Dict[str, Any], briefs: Dict[str, Any], llm, repo_manager, agent_id: str, issues: Optional[Dict[str, Any]] = None):
         path = file_spec["path"]
+        manager = getattr(self, "brief_manager", None)
+        consumed = manager.consume(path, briefs) if manager else {}
         current = repo_manager.read_file(path) if repo_manager.exists(path) else ""
         try:
             previous = to_brief(current) if path.endswith(".py") else {"functions": [], "classes": []}
@@ -234,6 +237,8 @@ class GenerateCodeAction(Action):
             lock_factory = nullcontext
 
         with lock_factory():
+            if manager:
+                manager.assert_current(consumed)
             checkout = getattr(repo_manager, "checkout_agent_branch", None)
             if checkout:
                 checkout(agent_id)
@@ -278,7 +283,13 @@ class GenerateCodeAction(Action):
                 ur["compatibility_note"] = "Exported interface changed; revalidate dependents."
 
             # Delegate commit details to RepoManager.commit_file.
-            repo_manager.commit_file(file_spec["path"], ur, agent_id)
+            ur["dependency_versions"] = consumed
+            ur["source_hash"] = hashlib.sha256(repo_manager.read_bytes(path)).hexdigest()
+            commit_sha = repo_manager.commit_file(file_spec["path"], ur, agent_id)
+            if getattr(repo_manager, "git_enabled", False) and commit_sha is None:
+                commit_sha = repo_manager._git("rev-parse", "HEAD").stdout.strip()
+            brief["commit_sha"] = commit_sha
+            brief["source_hash"] = ur["source_hash"]
             brief["interface_version"] = ur["interface_version"]
             brief["parent_interface_version"] = ur["previous_interface_version"]
             brief["latest_update_reason"] = ur

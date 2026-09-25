@@ -3,14 +3,50 @@ from typing import Any, Dict, Optional
 from threading import RLock
 
 class BriefManager:
-    def __init__(self):
+    def __init__(self, artifacts=None):
         self._briefs: Dict[str, dict] = {}
         self._lock = RLock()
+        self.artifacts = artifacts
+        self.events = []
+        if artifacts and artifacts.root and (artifacts.root / "interfaces/journal.json").exists():
+            self.events = artifacts.read_json("interfaces/journal.json")
+            self.replay()
+
+    def replay(self):
+        with self._lock:
+            self._briefs = {}
+            for event in self.events:
+                if event["kind"] == "publish":
+                    self._briefs[event["file_path"]] = deepcopy(event["brief"])
+
+    def record(self, kind, **payload):
+        with self._lock:
+            event = {"sequence": len(self.events) + 1, "kind": kind, **deepcopy(payload)}
+            updated = self.events + [event]
+            if self.artifacts:
+                self.artifacts.write_json("interfaces/journal.json", updated)
+            self.events = updated
+            return event["sequence"]
+
+    def versions(self, paths):
+        with self._lock:
+            return {p: {k: self._briefs.get(p, {}).get(k) for k in ("source_hash", "interface_version", "commit_sha")} for p in paths}
+
+    def consume(self, consumer, paths):
+        versions = self.versions(paths)
+        self.record("consume", consumer=consumer, dependencies=versions)
+        return versions
+
+    def assert_current(self, versions):
+        if self.versions(versions) != versions:
+            raise StaleBriefContext("Dependency versions changed during generation")
 
     def _public_summary(self, entry: Optional[dict]) -> dict | None:
         if entry is None:
             return None
         allowed = {
+            "source", "constants", "attributes", "reexports", "imports", "interface_version",
+            "parent_interface_version", "source_hash", "commit_sha", "publication_id", "invariant_sources",
             "functions",
             "classes",
             "error",
@@ -56,7 +92,12 @@ class BriefManager:
             elif "typed_signatures" not in entry:
                 entry["typed_signatures"] = []
 
-            self._briefs[file_path] = self._public_summary(entry) or {}
+            accepted = self._public_summary(entry) or {}
+            if accepted == self._briefs.get(file_path):
+                return
+            accepted["publication_id"] = len(self.events) + 1
+            self.record("publish", file_path=file_path, brief=accepted)
+            self._briefs[file_path] = accepted
 
     def get_brief(self, file_path: str) -> dict | None:
         with self._lock:
@@ -65,3 +106,7 @@ class BriefManager:
     def list_available(self):
         with self._lock:
             return list(self._briefs.keys())
+
+
+class StaleBriefContext(RuntimeError):
+    pass

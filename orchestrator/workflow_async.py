@@ -339,12 +339,12 @@ class MultiAgentCodegenWorkflowAsync:
         self.result.repo_root = repo_root
         self._set_stage("initialization")
         self._artifact_json("repository/repo_root.json", {"repo_root": repo_root})
-        brief_mgr = BriefManager()
+        brief_mgr = BriefManager(artifacts=getattr(self.ctx, "artifacts", None))
         self._brief_mgr = brief_mgr
         for path in allowed_all:
-            if path.endswith(".py") and repo.is_file(path):
+            if path.endswith(".py") and repo.is_file(path) and brief_mgr.get_brief(path) is None:
                 try:
-                    brief_mgr.update_brief(path, to_brief(repo.read_file(path)))
+                    brief_mgr.update_brief(path, dict(to_brief(repo.read_file(path)), source="initial_repository", source_hash=hashlib.sha256(repo.read_bytes(path)).hexdigest()))
                 except SyntaxError:
                     pass
         if self._restored:

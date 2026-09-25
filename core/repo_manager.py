@@ -551,6 +551,9 @@ class RepoManager:
             "public_api_changed": bool(record.get("public_api_changed", False)),
             "related_files_brief_used": record.get("related_files_brief_used", []),
         }
+        for key in ("source_hash", "interface_version", "previous_interface_version", "dependency_versions", "imports_changed"):
+            if key in record:
+                normalized[key] = record[key]
         return self._json_safe(normalized)
 
     def _build_commit_message(
