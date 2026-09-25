@@ -1,4 +1,4 @@
-from core.llm import LLMClient as MockLLM
+from core.model_usage import metered_mock
 from orchestrator.context import Context
 from utils.run_artifacts import RunArtifacts
 
@@ -17,9 +17,15 @@ def bootstrap(cfg):
             max_tokens=cfg.llm.max_tokens,
             top_p=cfg.llm.top_p,
             base_url=cfg.llm.base_url,
+            request_timeout=cfg.llm.request_timeout,
+            request_retries=cfg.llm.request_retries,
+            token_limit=cfg.max_token_budget,
+            call_limit=cfg.max_model_calls,
         )
+    elif provider == "mock":
+        llm = metered_mock(cfg.llm, cfg.max_token_budget, cfg.max_model_calls)
     else:
-        llm = MockLLM(cfg.llm)
+        raise ValueError(f"Unsupported model provider: {provider}")
 
     rag = None
     if cfg.rag.enabled:

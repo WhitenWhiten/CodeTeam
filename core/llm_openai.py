@@ -1,6 +1,7 @@
 # core/llm_openai.py
 from __future__ import annotations
 import os, json, asyncio
+from core.model_usage import UsageLedger, MeteredModel
 from typing import Any, Dict, Optional
 try:
     import jsonschema
@@ -17,11 +18,11 @@ from core.schemas import (
 )
 
 try:
-    from openai import OpenAI
+    from openai import AsyncOpenAI
 except Exception:
-    OpenAI = None
+    AsyncOpenAI = None
 
-class OpenAILLM:
+class OpenAILLM(MeteredModel):
     def __init__(
         self,
         model: str = "gpt-4o",
@@ -30,41 +31,61 @@ class OpenAILLM:
         top_p: float = 0.95,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        request_timeout: float = 60,
+        request_retries: int = 2,
+        token_limit: int | None = None,
+        call_limit: int | None = None,
+        client=None,
     ):
-        assert OpenAI is not None, "Please `pip install openai`>=1.0"
+        if AsyncOpenAI is None and client is None:
+            raise RuntimeError("Install the openai dependency to use this provider")
         api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        if not api_key and client is None:
             raise RuntimeError("OPENAI_API_KEY not set")
-        self.client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+        self.client = client or AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=request_timeout, max_retries=0)
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
-        self.total_tokens = 0
+        self.request_timeout = request_timeout
+        self.request_retries = request_retries
+        self.usage = UsageLedger(token_limit, call_limit)
 
-    def _record_usage(self, resp) -> None:
-        usage = getattr(resp, "usage", None)
-        total = getattr(usage, "total_tokens", None)
-        if isinstance(total, int):
-            self.total_tokens += total
+    async def close(self):
+        await self.client.close()
 
     async def text(self, prompt: str) -> str:
-        for attempt in range(3):
+        return await self._request(prompt, json_mode=False)
+
+    async def _request(self, prompt, json_mode):
+        system = "Return ONLY a valid JSON object." if json_mode else "You are a senior software engineer."
+        for attempt in range(self.request_retries + 1):
+            record = self.usage.reserve(system + prompt, self.max_tokens)
+            record.update(model=self.model, temperature=self.temperature, top_p=self.top_p, attempt=attempt + 1)
             try:
-                resp = await asyncio.to_thread(self.client.chat.completions.create,
+                options = {"response_format": {"type": "json_object"}} if json_mode else {}
+                async with asyncio.timeout(self.request_timeout):
+                    resp = await self.client.chat.completions.create(
                     model=self.model,
                     temperature=self.temperature,
                     top_p=self.top_p,
-                    max_tokens=self.max_tokens,
-                    messages=[{"role":"system","content":"You are a senior software engineer."},
+                    max_tokens=record["max_output_tokens"],
+                    messages=[{"role":"system","content":system},
                               {"role":"user","content":prompt}],
+                    **options,
                 )
-                self._record_usage(resp)
-                return resp.choices[0].message.content or ""
-            except Exception as e:
-                if attempt == 2: raise
-                await asyncio.sleep(1.5 * (attempt+1))
-        return ""
+                content = resp.choices[0].message.content or ""
+            except BaseException as exc:
+                self.usage.finish(record, error=type(exc).__name__)
+                status = getattr(exc, "status_code", None)
+                transient = isinstance(exc, (TimeoutError, ConnectionError)) or type(exc).__name__ in {"APIConnectionError", "APITimeoutError"} or status in {408, 409, 429} or isinstance(status, int) and status >= 500
+                if not transient or attempt == self.request_retries:
+                    raise
+                await asyncio.sleep(min(0.5 * 2 ** attempt, 4))
+                continue
+            self.usage.finish(record, output=content, usage=getattr(resp, "usage", None))
+            self.usage.check()
+            return content
 
     async def structured_json(self, prompt: str, schema: str | Dict[str, Any] | None = None, max_retries: int = 3) -> Dict[str, Any]:
         # Use response_format to force JSON, then validate and repair against the schema.
@@ -84,6 +105,8 @@ class OpenAILLM:
             elif schema.upper() == "QA_TEST_BUNDLE":
                 schema_dict = QA_TEST_BUNDLE_SCHEMA
                 named_validator = validate_qa_test_bundle
+            else:
+                raise ValueError(f"Unknown structured output schema: {schema}")
 
         content = await self._gen_json_once(prompt)
         parsed = self._safe_parse_json(content)
@@ -109,6 +132,7 @@ class OpenAILLM:
             else:
                 if parsed is not None:
                     return parsed
+                last_msg = content
         raise ValueError("Failed to produce valid structured JSON after retries")
 
     async def files(self, prompt: str, max_retries: int = 3) -> Dict[str, str]:
@@ -127,19 +151,7 @@ class OpenAILLM:
         raise ValueError("Failed to produce files JSON")
 
     async def _gen_json_once(self, prompt: str) -> str:
-        resp = await asyncio.to_thread(self.client.chat.completions.create,
-            model=self.model,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            max_tokens=self.max_tokens,
-            response_format={"type":"json_object"},
-            messages=[
-                {"role":"system","content":"Return ONLY valid minified JSON. Do not include extra commentary."},
-                {"role":"user","content":prompt},
-            ],
-        )
-        self._record_usage(resp)
-        return resp.choices[0].message.content or ""
+        return await self._request(prompt, json_mode=True)
 
     def _safe_parse_json(self, text: str) -> Optional[Dict[str, Any]]:
         if not text:
@@ -152,7 +164,8 @@ class OpenAILLM:
             if m1 != -1 and m2 != -1 and m2 > m1:
                 text = text[m1:m2+1]
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else None
         except Exception:
             return None
 
@@ -162,6 +175,8 @@ class OpenAILLM:
                 validator(obj)
             elif jsonschema is not None:
                 jsonschema.validate(obj, schema)
+            else:
+                raise RuntimeError("jsonschema is required to validate structured output")
             return True, ""
         except Exception as e:
             return False, str(e)

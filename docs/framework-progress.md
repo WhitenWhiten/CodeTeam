@@ -8,7 +8,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T3: Developer context, source-preserving repair, interface changes.
 - [x] T4: QA execution, structured diagnostics, timeout cleanup.
 - [x] T5: Dependency-aware verification and repair closure.
-- [ ] T6: Model providers, cancellation, usage and budgets.
+- [x] T6: Model providers, cancellation, usage and budgets.
 - [ ] T7: Workspace and Git collaboration semantics.
 - [ ] T8: RAG contracts, cache validation and observable fallback.
 - [ ] T9: Configuration, durable run records and stage recovery.
@@ -34,3 +34,10 @@ T5: Batch tests run only when their declared source dependencies are ready.
 Symbol aliases participate in scheduling; changed APIs invalidate completed
 consumers. Real pytest integration covers final repair verification, zero repair
 budget and detection of unchanged failing code.
+
+T6: Native async provider requests are cancellable and timeout-bounded. Transient
+errors alone are retried; schema repairs share the same accounting. Concurrent
+requests reserve a conservative UTF-8 byte estimate plus output capacity; missing
+usage and interrupted requests retain that charge. Tests cover cancellation,
+concurrent admission, unknown usage, call limits and workflow budget propagation.
+No live model service is called by these tests.

@@ -48,7 +48,7 @@ class DeveloperWorkerAsync:
                 self.log.info(f"done {t} {file_path}")
             except Exception as e:
                 self.log.error(f"error {t} {file_path}: {e}")
-                await self.bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path, "error": str(e)})
+                await self.bus.emit("dev_done", {"agent_id": self.agent_id, "file": file_path, "error": str(e), "error_type": type(e).__name__})
 
     async def _collect_briefs(self, file_spec: dict) -> dict:
         briefs = {}

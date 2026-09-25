@@ -25,7 +25,9 @@ class LLMConfig(BaseModel):
     temperature: float = 0.2
     top_p: float = 0.95
     max_tokens: int = 8192
-    base_url: Optional[str] = "https://api.openai-proxy.org/v1"
+    base_url: Optional[str] = None
+    request_timeout: float = 60
+    request_retries: int = 2
 
 
 class GitConfig(BaseModel):
@@ -45,6 +47,7 @@ class SystemConfig(BaseModel):
     max_rounds: int = 2
     max_wall_clock_seconds: Optional[int] = None
     max_token_budget: Optional[int] = None
+    max_model_calls: Optional[int] = None
     workspace: str = "./workspace"
     allow_languages: List[str] = ["python"]
     user_question: str = "Build a simplified online shop program with catalog browsing, adding items to a cart, and calculating the checkout total."

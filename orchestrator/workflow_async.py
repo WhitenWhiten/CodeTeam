@@ -109,6 +109,8 @@ class MultiAgentCodegenWorkflowAsync:
                     validate_sds(sds_json)
                     trace["sds"] = sds_json
                     return trace
+                except BudgetExceeded:
+                    raise
                 except Exception:
                     continue
             raise RuntimeError("SDS generation failed")
@@ -292,6 +294,8 @@ class MultiAgentCodegenWorkflowAsync:
                 except asyncio.TimeoutError as exc:
                     raise RuntimeError(f"Developers timed out; running={scheduler.running_files()}") from exc
                 file_path = done.get("file") if isinstance(done, dict) else None
+                if isinstance(done, dict) and done.get("error_type") == "BudgetExceeded":
+                    raise BudgetExceeded(done["error"])
                 if not file_path or done.get("error"):
                     raise RuntimeError(f"Developer failed: {done!r}")
                 scheduler.complete(file_path)
