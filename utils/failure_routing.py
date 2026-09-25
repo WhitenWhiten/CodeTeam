@@ -247,7 +247,8 @@ def _choose_source_path(
                 "category": "interface_consistency",
                 "targets": provider_files[:1],
                 "diagnostics": diagnostics,
-                "public_api_changed": True,
+                "public_api_changed": False,
+                "suspected_api_violation": True,
             }
 
     if path_info.get("explicit_source"):
@@ -377,7 +378,8 @@ def build_fix_suggestions(
                     "suspected_source_files": targets,
                     "minimal_repair_scope": [file_path],
                     "public_api_changed": route["public_api_changed"],
-                    "affected_dependents": affected,
+                    "affected_dependents": [],
+                    "retest_dependents": affected,
                     "diagnostics": route["diagnostics"],
                     "requeue": True,
                 }

@@ -14,7 +14,7 @@ except ImportError:
         async def run(self, *args, **kwargs):
             raise NotImplementedError
 
-from core.ast_utils import to_brief
+from core.ast_utils import to_brief, public_surface, interface_version
 from core.interface_contracts import validate_implementation, validate_import_contract
 from core.dependencies import resolve_file_dependencies
 from core.text_utils import strip_code_fences
@@ -128,9 +128,13 @@ class GenerateCodeAction(Action):
         return brief
 
     def _interface_delta(self, before, after):
-        delta = {}
+        before, after = public_surface(before), public_surface(after)
+        delta = {"previous_interface_version": interface_version(before), "interface_version": interface_version(after)}
         changed = []
-        for kind in ("functions", "classes"):
+        if before["imports"] != after["imports"]:
+            changed.append("<imports>")
+            delta["imports_changed"] = {"before": before["imports"], "after": after["imports"]}
+        for kind in ("functions", "classes", "constants", "reexports", "attributes"):
             old = {x["name"]: x for x in before.get(kind, [])}
             new = {x["name"]: x for x in after.get(kind, [])}
             delta[kind + "_added"] = [new[n] for n in sorted(new.keys() - old.keys())]
@@ -275,6 +279,8 @@ class GenerateCodeAction(Action):
 
             # Delegate commit details to RepoManager.commit_file.
             repo_manager.commit_file(file_spec["path"], ur, agent_id)
+            brief["interface_version"] = ur["interface_version"]
+            brief["parent_interface_version"] = ur["previous_interface_version"]
             brief["latest_update_reason"] = ur
             brief["compatibility_note"] = ur["compatibility_note"]
             brief["typed_signatures"] = self._typed_signatures(brief)

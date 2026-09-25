@@ -103,8 +103,9 @@ class FailureRoutingDiagnosticsTests(unittest.TestCase):
         self.assertEqual(suggestions[0]["dev_id"], "Dev-2")
         self.assertEqual(suggestions[0]["file_path"], "shop/catalog.py")
         self.assertEqual(suggestions[0]["suspected_source_files"], ["shop/catalog.py"])
-        self.assertTrue(suggestions[0]["public_api_changed"])
-        self.assertEqual(suggestions[0]["affected_dependents"], ["main.py"])
+        self.assertFalse(suggestions[0]["public_api_changed"])
+        self.assertEqual(suggestions[0]["retest_dependents"], ["main.py"])
+        self.assertEqual(suggestions[0]["affected_dependents"], [])
 
     def test_unknown_failure_does_not_fan_out_to_all_source_files(self):
         failure = {

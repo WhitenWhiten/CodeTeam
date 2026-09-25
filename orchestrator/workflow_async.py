@@ -24,7 +24,7 @@ from utils.event_bus_async import AsyncEventBus
 from utils.runtime_dev_plan import build_runtime_sds_json
 from runtime_adapters.python_runtime_async import PythonRuntimeAsync
 from utils.logger import get_logger, StageTimer
-from orchestrator.scheduler import DependencyScheduler
+from orchestrator.scheduler import merge_repair_payload, DependencyScheduler
 from orchestrator.architect_diversity import build_architect_profiles, update_claimed_summary
 
 class MultiAgentCodegenWorkflowAsync:
@@ -497,12 +497,14 @@ class MultiAgentCodegenWorkflowAsync:
                 scheduler.complete(file_path)
                 payloads.pop(file_path, None)
                 if done.get("update_reason", {}).get("public_api_changed"):
-                    changed.append(file_path)
-            for path in changed:
-                stale = set(scheduler.transitive_dependents(path)) & scheduler.completed
+                    changed.append((file_path, done["update_reason"]))
+            accepted = set(scheduler.completed)
+            for path, reason in changed:
+                stale = set(scheduler.transitive_dependents(path)) & accepted
                 scheduler.requeue_files(stale)
                 for dependent in stale:
-                    payloads[dependent] = {"type": "fix", "issues": {"upstream_file": path, "reason": "Upstream interface changed"}}
+                    merge_repair_payload(payloads, dependent, {"upstream_file": path, "reason": "Accepted upstream interface changed",
+                        "interface_version": reason.get("interface_version"), "previous_interface_version": reason.get("previous_interface_version")})
             if qa is not None:
                 fixes = await self._verify(qa, scheduler, partial=True)
                 if fixes:

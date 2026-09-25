@@ -238,9 +238,9 @@ class DependencyScheduler:
             public_api_changed = bool(
                 fix.get("public_api_changed", issues.get("public_api_changed", False))
             )
-            affected_dependents = self._affected_dependents(fix, issues)
+            affected_dependents = []
             if public_api_changed:
-                affected_dependents.extend(self.transitive_dependents(file_path))
+                affected_dependents = self._affected_dependents(fix, issues) + self.transitive_dependents(file_path)
 
             for dependent in affected_dependents:
                 dependent_path = _normalize_path(dependent)
@@ -250,17 +250,11 @@ class DependencyScheduler:
                     or dependent_path not in self.file_set
                 ):
                     continue
-                payloads.setdefault(
-                    dependent_path,
-                    {
-                        "type": "fix",
-                        "file_path": dependent_path,
-                        "issues": {
-                            "upstream_file": file_path,
-                            "reason": "dependent requeued after upstream API change",
-                        },
-                    },
-                )
+                merge_repair_payload(payloads, dependent_path, {
+                    "upstream_file": file_path,
+                    "reason": "dependent requeued after accepted upstream API change",
+                    "interface_version": fix.get("interface_version", issues.get("interface_version")),
+                })
                 to_requeue.append(dependent_path)
 
         self.requeue_files(to_requeue)
