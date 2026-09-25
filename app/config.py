@@ -53,7 +53,14 @@ class DeveloperAllocationConfig(ConfigModel):
     assignment_seed: Optional[int] = None
 
 
+class ContextConfig(ConfigModel):
+    max_prompt_bytes: int = Field(default=65536, ge=1024)
+    max_brief_requests: int = Field(default=2, ge=0, le=2)
+    issue_excerpt_chars: int = Field(default=4000, ge=128)
+
+
 class SystemConfig(ConfigModel):
+    context: ContextConfig = Field(default_factory=ContextConfig)
     architects: int = Field(default=4, ge=1)
     architect_seed: Optional[int] = None
     sds_retry: int = Field(default=1, ge=0)

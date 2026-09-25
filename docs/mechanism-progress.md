@@ -12,7 +12,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M07: Evidence-based routing
 - [x] M08: Minimal invalidation
 - [x] M09: Durable interface communication
-- [ ] M10: Bounded context and briefing
+- [x] M10: Bounded context and briefing
 - [ ] M11: Planning diversity
 - [ ] M12: Closed resource state
 - [ ] M13: Workload-aware allocation
@@ -44,3 +44,5 @@ M08: Separated retest hints from regeneration; versioned public signatures, bind
 Batch B: 36 passed (planning, progressive QA, evidence routing, minimal invalidation, scheduler, repair and framework integration).
 
 M09: Persisted replayable publish/consume journal, commit/source/API/parent identities and pre-write stale-dependency rejection with bounded recollection. Shared-worktree writes remain serialized. Batch C pending.
+
+M10: Added deterministic UTF-8 context caps, omission receipts and complete-target-or-fail policy; up to two explicit interface-only requests; SDS-sourced invariants reach prompts and published briefs. Batch C pending.

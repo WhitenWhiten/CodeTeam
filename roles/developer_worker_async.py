@@ -11,7 +11,7 @@ from core.brief_manager import StaleBriefContext
 
 class DeveloperWorkerAsync:
     def __init__(self, agent_id: str, assigned_files: List[str], sds_map: Dict[str, dict],
-                 llm, repo_manager, brief_manager, event_bus):
+                 llm, repo_manager, brief_manager, event_bus, context_config=None):
         self.agent_id = agent_id
         self.assigned_files = set(assigned_files)
         self.sds_map = sds_map
@@ -26,6 +26,7 @@ class DeveloperWorkerAsync:
         self._gen.repo_specs = list(sds_map.values())
         self._gen.repo_files = list(getattr(repo_manager, "allowed_files_all", sds_map))
         self._gen.brief_manager = brief_manager
+        self._gen.context_config = context_config
         self._req = RequestBriefingAction()
 
     async def start(self):

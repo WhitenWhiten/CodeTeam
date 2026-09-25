@@ -94,6 +94,7 @@ SDS_SCHEMA: Dict[str, Any] = {
       "properties": {
         "path": {"type": "string"},
         "responsibilities": {"type": "string"},
+        "invariants": {"type": "array", "items": {"type": "object", "required": ["statement", "source"], "properties": {"statement": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}}, "additionalProperties": False}},
         "interfaces": {
           "type": "object",
           "required": ["functions", "classes"],

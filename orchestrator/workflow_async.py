@@ -373,7 +373,7 @@ class MultiAgentCodegenWorkflowAsync:
 
         dev_tasks = self._dev_tasks
         for a in sds.dev_plan:
-            worker = DeveloperWorkerAsync(a.developer_id, a.file_paths, sds_map, self.ctx.llm, repo, brief_mgr, bus)
+            worker = DeveloperWorkerAsync(a.developer_id, a.file_paths, sds_map, self.ctx.llm, repo, brief_mgr, bus, context_config=self.ctx.cfg.context)
             dev_tasks.append(await worker.start())
 
         # Initial implementation round.

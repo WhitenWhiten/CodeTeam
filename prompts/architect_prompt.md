@@ -36,3 +36,5 @@ Artifact completeness:
 - Every required source/configuration/document/manifest file needs a file_spec and owner, or an explicit file_rules static producer with content.
 - Unowned tests/ paths are temporary QA placeholders; unowned __init__.py files are intentionally empty package markers.
 - Declare installable dependencies explicitly in dependencies and include a requirements.txt or pyproject.toml producer. Framework descriptions alone do not install packages.
+
+For each file, optional invariants must carry statement and source (requirement ID or explicit SDS design rule). These are design claims, not verified behavior.

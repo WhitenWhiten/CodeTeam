@@ -19,6 +19,7 @@ from core.ast_utils import to_brief, public_surface, interface_version
 from core.interface_contracts import validate_implementation, validate_import_contract
 from core.dependencies import resolve_file_dependencies
 from core.text_utils import strip_code_fences
+from core.context_budget import bounded_prompt
 
 DEV_PROMPT_FALLBACK = """# FILE_PATH: {file_path}
 You are a senior software engineer. Your task is to implement or fix one source file and ensure the result can be written directly to the target repository.
@@ -101,6 +102,7 @@ class GenerateCodeAction(Action):
             briefs_pretty=briefs_pretty,
             issues_excerpt=issues_excerpt or "(none)"
         )
+        prompt += "\nSDS invariants with sources: " + json.dumps(file_spec.get("invariants", []), ensure_ascii=False)
         return prompt + ("\n\nCurrent target file (complete):\n" + (current_source or "(new file)")
                          + "\n\nReturn the complete replacement file. Preserve unrelated behavior, helpers and public interfaces.")
 
@@ -219,9 +221,38 @@ class GenerateCodeAction(Action):
         except SyntaxError:
             previous = {"functions": [], "classes": []}
         feedback = dict(issues or {})
+        config = getattr(self, "context_config", None)
+        request_count = 0
         for attempt in range(3):
-            prompt = self._build_prompt(file_spec, briefs, feedback, current)
-            code = strip_code_fences(await llm.text(prompt))
+            while True:
+                builder = lambda b, i: self._build_prompt(file_spec, b, i, current) + '\nYou may request one extra interface using JSON {"request_brief":"relative/path.py"}. Maximum two requests per task; never request source. Otherwise return complete target code.'
+                try:
+                    prompt, receipt = bounded_prompt(builder, briefs, feedback,
+                        getattr(config, "max_prompt_bytes", 65536), getattr(config, "issue_excerpt_chars", 4000))
+                except ValueError as exc:
+                    if manager: manager.record("context_budget", consumer=path, **exc.receipt)
+                    raise
+                if manager: manager.record("context_budget", consumer=path, **receipt)
+                raw = await llm.text(prompt)
+                try: action = json.loads(strip_code_fences(raw))
+                except (ValueError, TypeError): action = None
+                if not isinstance(action, dict) or "request_brief" not in action:
+                    code = strip_code_fences(raw)
+                    break
+                request_count += 1
+                target = action.get("request_brief")
+                allowed = isinstance(target, str) and target != path and target in getattr(self, "repo_files", [])
+                if request_count > getattr(config, "max_brief_requests", 2):
+                    if manager: manager.record("brief_request", consumer=path, target=target, status="rejected_limit")
+                    raise ValueError("Developer exceeded extra briefing request limit")
+                extra = manager.get_brief(target) if manager and allowed else None
+                if manager: manager.record("brief_request", consumer=path, target=target, status="accepted" if extra else "unavailable_or_forbidden")
+                if extra:
+                    briefs[target] = extra
+                    consumed.update(manager.consume(path, [target]))
+                else:
+                    feedback["brief_request_error"] = "Requested interface unavailable; implement using declared contracts."
+
             try:
                 brief = self._validate_candidate(code, file_spec)
                 break
@@ -295,5 +326,6 @@ class GenerateCodeAction(Action):
             brief["latest_update_reason"] = ur
             brief["compatibility_note"] = ur["compatibility_note"]
             brief["typed_signatures"] = self._typed_signatures(brief)
-            brief.setdefault("invariants", [])
+            brief["invariants"] = [row["statement"] for row in file_spec.get("invariants", [])]
+            brief["invariant_sources"] = file_spec.get("invariants", [])
             return brief
