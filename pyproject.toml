@@ -16,9 +16,10 @@ analysis = ["pandas", "openpyxl", "scipy"]
 
 [project.scripts]
 codeteam = "app.main:main"
+codeteam-experiment = "experiments.cli:main"
 
 [tool.setuptools]
-packages = ["app", "actions", "core", "orchestrator", "roles", "runtime_adapters", "utils", "rag", "prompts"]
+packages = ["app", "actions", "core", "orchestrator", "roles", "runtime_adapters", "utils", "rag", "prompts", "experiments"]
 
 [tool.setuptools.package-data]
 prompts = ["*.md"]
