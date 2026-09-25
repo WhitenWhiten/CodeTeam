@@ -54,11 +54,9 @@ async def amain(argv=None):
         cfg = load_config(config_path, {target: getattr(args, name) for name, target in targets.items()})
         if args.resume and args.question is None and args.requirements_file is None:
             saved = json.loads((Path(args.resume) / 'checkpoint.json').read_text(encoding='utf-8'))
-            question = saved['question']
+            question = saved.get('original_question', saved['question'])
         else:
             question = load_requirements_text(cfg.requirements_file, cfg.user_question)
-            if cfg.preprocess_requirements:
-                question = preprocess_requirements(question)
         if not question.strip():
             raise ValueError('Requirements must not be empty')
         ctx = bootstrap(cfg)

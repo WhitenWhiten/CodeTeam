@@ -103,6 +103,7 @@ class GenerateCodeAction(Action):
             briefs_pretty=briefs_pretty,
             issues_excerpt=issues_excerpt or "(none)"
         )
+        prompt += "\nDeclared requirement IDs: " + json.dumps(file_spec.get("requirement_ids", []))
         prompt += "\nSDS invariants with sources: " + json.dumps(file_spec.get("invariants", []), ensure_ascii=False)
         return prompt + ("\n\nCurrent target file (complete):\n" + (current_source or "(new file)")
                          + "\n\nReturn the complete replacement file. Preserve unrelated behavior, helpers and public interfaces.")

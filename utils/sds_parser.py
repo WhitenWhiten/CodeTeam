@@ -25,7 +25,7 @@ def parse_sds(sds_json: Dict[str, Any]) -> SDS:
         file_specs.append(FileSpec(path=fs["path"],
                                    responsibilities=fs["responsibilities"],
                                    interfaces=interfaces,
-                                   dependencies=fs.get("dependencies", []), invariants=fs.get("invariants", []), workload=fs.get("workload", {})))
+                                   dependencies=fs.get("dependencies", []), invariants=fs.get("invariants", []), workload=fs.get("workload", {}), requirement_ids=fs.get("requirement_ids", [])))
     dev_plan = [DevAssignment(developer_id=a["developer_id"], file_paths=a["file_paths"]) for a in sds_json["dev_plan"]]
     return SDS(id=sds_json["id"], problem=sds_json["problem"], tech_stack=sds_json["tech_stack"],
                repo_structure=repo_nodes, file_specs=file_specs, dev_plan=dev_plan,

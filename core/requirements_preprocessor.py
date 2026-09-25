@@ -45,64 +45,72 @@ def load_requirements_text(path: str | None, fallback: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+def requirements_document(text: str, enabled: bool = True) -> dict:
+    """One CLI/API input boundary with original source and block decisions."""
+    import hashlib
+    lines=(text or "").replace("\r\n","\n").replace("\r","\n").split("\n")
+    records=[]; kept=[]; occurrences={}; skip_level=None; index=0
+    fence_pattern=r"^\s*([\x60]{3,}|~{3,})(.*)$"
+    while index<len(lines):
+        start=index
+        line=lines[index].rstrip()
+        fence=re.match(fence_pattern,line)
+        heading=_parse_heading(line)
+        if fence:
+            marker=fence.group(1); index+=1
+            while index<len(lines) and not lines[index].strip().startswith(marker): index+=1
+            if index<len(lines): index+=1
+            block=lines[start:index]; kind="example"
+        elif heading:
+            block=[line]; index+=1; kind="heading"
+            if skip_level is not None and heading[0]<=skip_level: skip_level=None
+            if enabled and _is_noisy_heading(heading[1]): skip_level=heading[0]
+        else:
+            index+=1
+            while index<len(lines) and lines[index].strip() and not _parse_heading(lines[index]) and not re.match(fence_pattern,lines[index]): index+=1
+            block=lines[start:index]; kind="requirement"
+        original="\n".join(block)
+        canonical=original.strip()
+        if not canonical:
+            if kept and kept[-1]!="": kept.append("")
+            continue
+        digest=hashlib.sha256(canonical.encode()).hexdigest()[:12]
+        occurrences[digest]=occurrences.get(digest,0)+1
+        rid=f"REQ-{digest}-{occurrences[digest]}"
+        reason="preserved"; rendered=original
+        if enabled and skip_level is not None:
+            reason="noisy_section_including_descendants"; rendered=""
+        elif enabled and not fence:
+            cleaned=[_normalize_bullet(_clean_nonessential_inline(x)) for x in block]
+            rendered="\n".join(cleaned).strip()
+            if not rendered: reason="decorative_inline_content"
+            elif rendered!=original: reason="normalized_inline_content"
+        if rendered: kept.extend(rendered.split("\n")); kept.append("")
+        records.append({"id":rid,"kind":kind,"start_line":start+1,"end_line":index,
+                        "status":"retained" if rendered else "removed","reason":reason,
+                        "original":original,"text":rendered})
+    normalized=_finalize(kept) if enabled else text
+    return {"version":1,"original_sha256":hashlib.sha256((text or "").encode()).hexdigest(),
+            "normalized":normalized,"records":records,"preprocessing_enabled":enabled}
+
+
 def preprocess_requirements(text: str) -> str:
-    """Normalize README-style requirements into a compact planning document."""
-    if not text:
-        return ""
+    return requirements_document(text)["normalized"]
 
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    kept: list[str] = []
-    skip_section_level: int | None = None
-    in_fence = False
-    fence_lang = ""
-    fence_lines: list[str] = []
 
-    for raw_line in lines:
-        line = raw_line.rstrip()
+def requirement_catalog(document):
+    return [{k:r[k] for k in ("id","kind","start_line","end_line","text")} for r in document["records"] if r["status"]=="retained"]
 
-        if line.strip().startswith("```"):
-            if not in_fence:
-                in_fence = True
-                fence_lang = line.strip()[3:].strip().lower()
-                fence_lines = []
-            else:
-                _append_actionable_fence(kept, fence_lang, fence_lines)
-                in_fence = False
-                fence_lang = ""
-                fence_lines = []
-            continue
 
-        if in_fence:
-            fence_lines.append(line)
-            continue
-
-        heading = _parse_heading(line)
-        if heading:
-            level, title = heading
-            if skip_section_level is not None and level <= skip_section_level:
-                skip_section_level = None
-            if _is_noisy_heading(title):
-                skip_section_level = level
-                continue
-            kept.append(f"{'#' * min(level, 6)} {title}")
-            continue
-
-        if skip_section_level is not None:
-            continue
-
-        cleaned = _clean_nonessential_inline(line)
-        if not cleaned:
-            if kept and kept[-1] != "":
-                kept.append("")
-            continue
-
-        bullet = _normalize_bullet(cleaned)
-        kept.append(bullet)
-
-    if in_fence:
-        _append_actionable_fence(kept, fence_lang, fence_lines)
-
-    return _finalize(kept)
+def coverage_report(document,sds,test_requirements=None):
+    ids={r["id"] for r in requirement_catalog(document)}
+    files={s["path"]:s.get("requirement_ids",[]) for s in sds["file_specs"]}
+    tests=dict(test_requirements or {})
+    unknown=sorted({rid for refs in list(files.values())+list(tests.values()) for rid in refs}-ids)
+    if unknown: raise ValueError(f"Unknown requirement references: {unknown}")
+    return {"files":files,"tests":tests,"unmapped_to_files":sorted(ids-{x for refs in files.values() for x in refs}),
+            "unmapped_to_tests":sorted(ids-{x for refs in tests.values() for x in refs}),
+            "interpretation":"Declared trace links, not a proof of behavioral coverage"}
 
 
 def _parse_heading(line: str) -> tuple[int, str] | None:

@@ -17,7 +17,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M12: Closed resource state
 - [x] M13: Workload-aware allocation
 - [x] M14: Retrieval information contracts
-- [ ] M15: Requirement traceability
+- [x] M15: Requirement traceability
 - [ ] M16: Mechanism controls and acceptance
 
 ## Batch validation
@@ -56,3 +56,5 @@ Batch C: 26 passed; one regression exposed an unsafe source field in the public 
 M13: Added explicit Architect or structural-heuristic effort estimates, reproducible owner/dependency/load reports and concurrent slot queueing that preserves ownership. Retained the documented small-batch QA barrier. Final batch pending.
 
 M14: Typed source availability distinguishes raw README from provided summaries; one exact packet renderer records order/truncation/hash and both prompt boundaries. Frozen packet replay bypasses corpus/embeddings and validates query identity and budget. Final batch pending.
+
+M15: Centralized original-to-normalized requirements at workflow entry; preserved API/config fences, removed noisy subtrees, and recorded stable IDs/source spans/filter decisions. File/test references and explicit unmapped coverage reach saved artifacts. Final batch pending.

@@ -40,3 +40,5 @@ Artifact completeness:
 For each file, optional invariants must carry statement and source (requirement ID or explicit SDS design rule). These are design claims, not verified behavior.
 
 Include workload for each file: positive relative effort, source="architect", and rationale based on interfaces and dependencies. A missing estimate is explicitly replaced by a structural heuristic, never represented as your estimate.
+
+Map file requirement_ids to the provided REQUIREMENT_CATALOG. Do not invent IDs. Unmapped requirements remain visible in the coverage report.

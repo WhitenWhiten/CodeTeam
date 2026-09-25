@@ -94,6 +94,7 @@ SDS_SCHEMA: Dict[str, Any] = {
       "properties": {
         "path": {"type": "string"},
         "responsibilities": {"type": "string"},
+        "requirement_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
         "workload": {"type": "object", "required": ["effort", "source", "rationale"], "properties": {"effort": {"type": "number", "exclusiveMinimum": 0}, "source": {"enum": ["architect", "structural_heuristic"]}, "rationale": {"type": "string"}}, "additionalProperties": False},
         "invariants": {"type": "array", "items": {"type": "object", "required": ["statement", "source"], "properties": {"statement": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}}, "additionalProperties": False}},
         "interfaces": {
@@ -174,6 +175,7 @@ QA_TEST_BUNDLE_SCHEMA: Dict[str, Any] = {
       "additionalProperties": {"type": "string"}
     },
     "run_command": {"type": "string", "minLength": 1},
+    "test_requirements": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
     "test_dependencies": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
     "fixture_dependencies": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
     "setup_commands": {

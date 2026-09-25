@@ -72,6 +72,10 @@ class GenerateTestsAction(Action):
                 bundle["tests"] = {p: strip_code_fences(c) for p, c in bundle["tests"].items()}
                 if first_tests is not None: assert_preserves_tests(first_tests, bundle["tests"])
                 validate_test_sources(bundle, sds)
+                known={r["id"] for r in (context or {}).get("requirement_catalog",[])}
+                for test,ids in bundle.get("test_requirements",{}).items():
+                    if test not in bundle["tests"] or not set(ids).issubset(known):
+                        raise ValueError("QA contains unknown test/requirement references")
                 self.attempts.append({"attempt": attempt, "status": "accepted", "bundle": bundle})
                 return bundle
             except (SyntaxError, ValueError, __import__('jsonschema').ValidationError) as exc:

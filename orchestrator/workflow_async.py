@@ -10,6 +10,7 @@ from pathlib import Path
 from core.ast_utils import to_brief
 from core.mechanism_state import MechanismState, count
 from core.workload import annotate_workload, workload_report
+from core.requirements_preprocessor import requirements_document, requirement_catalog, coverage_report
 from core.schemas import validate_qa_test_bundle
 from roles.architect_agent import ArchitectAgent
 from roles.cto_agent import CTOAgent
@@ -78,7 +79,11 @@ class MultiAgentCodegenWorkflowAsync:
         self._chosen_sds = None
         self._scheduler = None
         self._qa = None
+        self._original_question = question
+        self._requirements = requirements_document(question, enabled=self.ctx.cfg.preprocess_requirements)
+        question = self._requirements["normalized"]
         self._question = question
+        self.ctx.llm.requirement_catalog = requirement_catalog(self._requirements)
         self._restored = None
         self._recording = False
         self._pending_payloads = {}
@@ -95,6 +100,9 @@ class MultiAgentCodegenWorkflowAsync:
             self._mechanism_state = MechanismState(artifacts, resume=bool(self._restored), max_file_requeues=self.ctx.cfg.max_file_requeues)
             self.ctx.llm.mechanism_state = self._mechanism_state
             self._recording = True
+            self._artifact_text("requirements/original.md", self._original_question)
+            self._artifact_json("requirements/trace.json", self._requirements)
+            if not question.strip(): raise ValueError("Requirements must not be empty after preprocessing")
             self._persist_time()
             heartbeat = asyncio.create_task(self._time_heartbeat())
             if artifacts:
@@ -147,6 +155,8 @@ class MultiAgentCodegenWorkflowAsync:
                     self.result.usage = usage.snapshot()
                 if self._recording:
                     self._persist_time(closed=True)
+                    if self._chosen_sds:
+                        self._artifact_json("requirements/coverage.json", coverage_report(self._requirements,self._chosen_sds,getattr(self._qa,"test_requirements",{})))
                     self.result.mechanisms = self._mechanism_state.snapshot()
                     self.result.incomplete = {"pending_files": sorted(self._scheduler.pending | set(self._scheduler.running)) if self._scheduler else [],
                         "awaiting_full_verification": sorted(self._scheduler.completed) if self._scheduler and not self.result.success else [],
@@ -189,7 +199,7 @@ class MultiAgentCodegenWorkflowAsync:
         qa = self._qa
         bundle = qa.bundle() if qa and qa.tests else None
         artifacts.write_json("checkpoint.json", {"version": 1, "artifacts_dir": str(artifacts.root),
-            "question": self._question, "config_identity": self._config_identity(), "chosen_sds": self._chosen_sds,
+            "question": self._question, "original_question": self._original_question, "config_identity": self._config_identity(), "chosen_sds": self._chosen_sds,
             "repo_root": self.result.repo_root, "file_hashes": hashes, "qa_bundle": bundle,
             "completed": sorted(self._scheduler.completed) if self._scheduler else [],
             "pending_payloads": self._pending_payloads,
@@ -318,6 +328,7 @@ class MultiAgentCodegenWorkflowAsync:
                     assignment_seed=self.ctx.cfg.developer_allocation.assignment_seed,
                 )
                 self._artifact_json("planning/chosen_sds.json", chosen_sds)
+        self._artifact_json("requirements/coverage.json", coverage_report(self._requirements, chosen_sds))
         self._chosen_sds = chosen_sds
         sds = parse_sds(chosen_sds)
         if not self._restored:

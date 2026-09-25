@@ -28,6 +28,7 @@ class FileSpec:
     dependencies: List[str] = field(default_factory=list)
     invariants: List[dict] = field(default_factory=list)
     workload: Dict = field(default_factory=dict)
+    requirement_ids: List[str] = field(default_factory=list)
 
 @dataclass
 class DevAssignment:

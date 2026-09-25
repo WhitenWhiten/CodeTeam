@@ -24,3 +24,5 @@ Progressive QA protocol:
 - At each new implementation snapshot propose incremental tests; retain existing regressions. Do not weaken an earlier assertion to make an implementation pass.
 - Optional test_dependencies maps test paths to required source paths; fixture_dependencies maps test paths to required bundled support/fixture files. Include required conftest.py files.
 - Only generate tests against the declared source interfaces. No hidden reference tests are supplied.
+
+Return optional test_requirements mapping each test path to IDs from the requirement_catalog. These links express intended coverage only.

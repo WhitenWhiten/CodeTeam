@@ -22,6 +22,7 @@ class QAAgentAsync:
         self.progressive = progressive
         self.history = []
         self.test_dependencies = {}
+        self.test_requirements = {}
         self.fixture_dependencies = {}
         self._snapshot = None
         self._sds_json = None
@@ -46,13 +47,14 @@ class QAAgentAsync:
         self.run_command = bundle["run_command"]
         self.setup_commands = list(bundle.get("setup_commands", []))
         self.test_dependencies = dict(bundle.get("test_dependencies", {}))
+        self.test_requirements = dict(bundle.get("test_requirements", {}))
         self.fixture_dependencies = dict(bundle.get("fixture_dependencies", {}))
         self.history = list(history or [])
         self._snapshot = self.history[-1].get("snapshot") if self.history else None
 
     def bundle(self):
         return {"tests": self.tests, "run_command": self.run_command, "setup_commands": self.setup_commands,
-                "test_dependencies": self.test_dependencies, "fixture_dependencies": self.fixture_dependencies}
+                "test_dependencies": self.test_dependencies, "fixture_dependencies": self.fixture_dependencies, "test_requirements": self.test_requirements}
 
     async def refresh_tests(self, completed, briefs, phase="batch"):
         import hashlib, json
@@ -61,7 +63,8 @@ class QAAgentAsync:
         snapshot = hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
         if snapshot == self._snapshot: return
         context = {"requirements": self.requirements, "phase": phase, "completed_files": sorted(completed),
-                   "source_versions": sources, "interface_briefs": briefs, "existing_tests": self.tests}
+                   "source_versions": sources, "interface_briefs": briefs, "existing_tests": self.tests,
+                   "requirement_catalog": getattr(self.llm,"requirement_catalog",[])}
         try:
             res = await self._gen.run(sds=self._sds_json, llm=self.llm, context=context)
         finally:
@@ -81,6 +84,8 @@ class QAAgentAsync:
             self.tests[target] = content
             renamed[path] = target
             added.append(target)
+        for path, ids in res.get("test_requirements", {}).items():
+            if renamed.get(path,path) in added: self.test_requirements[renamed.get(path,path)] = ids
         for path, deps in res.get("test_dependencies", {}).items():
             if renamed.get(path, path) in added: self.test_dependencies[renamed.get(path, path)] = deps
         for path, deps in res.get("fixture_dependencies", {}).items():
