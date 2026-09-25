@@ -7,7 +7,7 @@ def get_logger(name: str = "multiagent", level: str = "INFO") -> logging.Logger:
     if logger.handlers:
         return logger
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    h = logging.StreamHandler(sys.stdout)
+    h = logging.StreamHandler(sys.stderr)
     fmt = logging.Formatter(fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
     h.setFormatter(fmt)
     logger.addHandler(h)

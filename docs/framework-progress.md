@@ -11,7 +11,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T6: Model providers, cancellation, usage and budgets.
 - [x] T7: Workspace and Git collaboration semantics.
 - [x] T8: RAG contracts, cache validation and observable fallback.
-- [ ] T9: Configuration, durable run records and stage recovery.
+- [x] T9: Configuration, durable run records and stage recovery.
 - [ ] T10: Integrated acceptance tests, packaging and usage documentation.
 
 ## Checks
@@ -52,3 +52,10 @@ T8: Retrieval returns a stable design_hint contract with backend and fallback
 metadata. Architect-only retrieval is the default and roles are explicit. Invalid
 corpora fail clearly; vector caches validate content, dimensions and finite values.
 Atomic cache publication and recorded query history support audit and recovery.
+
+T9: Validated JSON configuration supports environment and CLI overrides. Run
+directories have exclusive process locks, atomic checkpoints, stage events, model
+request/response records, usage snapshots and persisted QA bundles. Recovery from
+the selected-design boundary verifies every source hash, restores completed work
+and pending repair context, and retains prior call/token charges. Wall time is a
+per-invocation limit. Tests cover interrupted runs, source drift and CLI recovery.

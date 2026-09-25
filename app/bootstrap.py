@@ -5,6 +5,7 @@ from utils.run_artifacts import RunArtifacts
 
 def bootstrap(cfg):
     import os
+    from pathlib import Path
 
     os.makedirs(cfg.workspace, exist_ok=True)
     provider = (cfg.llm.provider or "mock").lower()
@@ -33,7 +34,13 @@ def bootstrap(cfg):
 
         rag = RAGClient(cfg.rag)
 
-    artifacts_dir = cfg.artifacts_dir
+    artifacts_dir = cfg.resume_from or cfg.artifacts_dir
+    if cfg.resume_from and not cfg.artifacts_enabled:
+        raise ValueError("Resume requires enabled run artifacts")
+    if cfg.resume_from and not (Path(cfg.resume_from) / "checkpoint.json").is_file():
+        raise ValueError("Resume directory has no checkpoint.json")
+    if artifacts_dir and not cfg.resume_from and (Path(artifacts_dir) / "checkpoint.json").exists():
+        raise ValueError("Run directory already contains a checkpoint; use resume_from or choose a new directory")
     if not artifacts_dir:
         artifacts = RunArtifacts.create_for_workspace(cfg.workspace, enabled=cfg.artifacts_enabled)
     else:

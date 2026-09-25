@@ -7,5 +7,7 @@ class MultiAgentCodegenWorkflow(MultiAgentCodegenWorkflowAsync):
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(self.run(question))
-        raise RuntimeError('Use await workflow.run() inside an event loop')
+            pass
+        else:
+            raise RuntimeError('Use await workflow.run() inside an event loop')
+        return asyncio.run(self.run(question))

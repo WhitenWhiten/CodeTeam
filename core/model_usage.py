@@ -15,6 +15,18 @@ class UsageLedger:
         self.calls = 0
         self.records = []
         self.recorder = None
+        self.state_recorder = None
+
+    def snapshot(self):
+        return {"total_tokens": self.total_tokens, "reserved_tokens": self.reserved_tokens, "calls": self.calls}
+
+    def restore(self, state):
+        self.total_tokens = int(state["total_tokens"]) + int(state.get("reserved_tokens", 0))
+        self.calls = int(state["calls"])
+        self.reserved_tokens = 0
+        if self.total_tokens < 0 or self.calls < 0:
+            raise ValueError("Invalid persisted usage counters")
+        self.check()
 
     def reserve(self, prompt, max_output):
         # UTF-8 bytes plus message overhead: conservative admission estimate,
@@ -31,6 +43,8 @@ class UsageLedger:
         record = {"call": self.calls, "prompt": prompt, "reserved": input_estimate + max_output,
                   "max_output_tokens": max_output, "started": time.monotonic()}
         self.reserved_tokens += record["reserved"]
+        if self.state_recorder:
+            self.state_recorder(self.snapshot())
         return record
 
     def finish(self, record, output=None, usage=None, error=None):
@@ -43,6 +57,8 @@ class UsageLedger:
                       usage_source="provider" if known else "conservative_reservation",
                       elapsed_seconds=time.monotonic() - record.pop("started"))
         self.records.append(record)
+        if self.state_recorder:
+            self.state_recorder(self.snapshot())
         if self.recorder:
             self.recorder(record)
 

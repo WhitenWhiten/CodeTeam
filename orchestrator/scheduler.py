@@ -166,6 +166,15 @@ class DependencyScheduler:
             )
         return dispatched
 
+    def restore_completed(self, files) -> None:
+        restored = set(files)
+        if self.running or self.completed:
+            raise SchedulerError("Recovery requires a fresh scheduler")
+        if not restored.issubset(self.file_set):
+            raise SchedulerError("Checkpoint contains unknown completed files")
+        self.completed = restored
+        self.pending = self.file_set - restored
+
     def complete(self, file_path: str) -> None:
         path = _normalize_path(file_path)
         if path in self.completed:
