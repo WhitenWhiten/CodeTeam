@@ -300,6 +300,10 @@ def build_fix_suggestions(
     sds_ctx = _build_sds_context(sds)
 
     for failure in failures:
+        if failure.get("category") in {"setup_error", "environment_error", "timeout", "no_tests"}:
+            suggestions.append({"dev_id": None, "file_path": "", "issues": failure,
+                                "category": failure["category"], "requeue": False})
+            continue
         path_info = _paths_from_failure(failure, src_files)
         route = _choose_source_path(failure, src_files, sds_ctx, path_info)
         targets = [target for target in route["targets"] if target in file_owner]

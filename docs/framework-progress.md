@@ -6,7 +6,7 @@ Each task is implemented, checked, and committed separately.
 - [x] T1: Canonical SDS and message contracts; nested class serialization.
 - [x] T2: One workflow engine and explicit lifecycle results.
 - [x] T3: Developer context, source-preserving repair, interface changes.
-- [ ] T4: QA execution, structured diagnostics, timeout cleanup.
+- [x] T4: QA execution, structured diagnostics, timeout cleanup.
 - [ ] T5: Dependency-aware verification and repair closure.
 - [ ] T6: Model providers, cancellation, usage and budgets.
 - [ ] T7: Workspace and Git collaboration semantics.
@@ -25,3 +25,7 @@ wall-clock interruption and cancellation propagation.
 T3: Verified existing-source delivery, full interface metadata, same-owner symbol
 dependencies, signature fidelity and rejection of destructive invalid output.
 Repairs use complete-file replacements with bounded validation retries.
+
+T4: Both adapters share structured JUnit parsing and Python module execution.
+Checks exercise pass/fail, collection errors, zero tests and subprocess timeout.
+Setup/environment failures are not routed as source-code defects.

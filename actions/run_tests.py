@@ -2,8 +2,12 @@
 from __future__ import annotations
 import shutil
 import subprocess
+import asyncio
+import inspect
 from pathlib import Path
 from typing import Dict, Mapping
+from runtime_adapters.runner import python_module_args
+from runtime_adapters.process import run_process
 try:
     from metagpt.actions import Action
 except ImportError:
@@ -91,10 +95,12 @@ class RunTestsAction(Action):
         )
         return any(normalized.startswith(prefix) for prefix in allowed_prefixes)
 
-    def _run_setup_commands(self, repo_root: Path, setup_commands: list[str] | None) -> list[Dict[str, str]]:
+    async def _run_setup_commands(self, repo_root: Path, setup_commands: list[str] | None, adapter) -> list[Dict[str, str]]:
         records = []
         for command in setup_commands or []:
-            if not self._is_allowed_setup_command(command):
+            try:
+                argv = python_module_args(command, adapter.python_executable, setup=True)
+            except ValueError:
                 records.append(
                     {
                         "command": command,
@@ -106,25 +112,17 @@ class RunTestsAction(Action):
                 )
                 continue
             try:
-                proc = subprocess.run(
-                    command,
-                    shell=True,
-                    cwd=repo_root,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=600,
-                )
+                proc = await run_process(argv, repo_root, adapter.timeout)
                 records.append(
                     {
                         "command": command,
-                        "status": "success" if proc.returncode == 0 else "failed",
-                        "returncode": proc.returncode,
-                        "output": (proc.stdout + "\n" + proc.stderr).strip(),
-                        "reason": "",
+                        "status": "success" if proc["returncode"] == 0 and not proc["timed_out"] else "failed",
+                        "returncode": proc["returncode"],
+                        "output": proc["output"],
+                        "reason": "setup timed out" if proc["timed_out"] else "",
                     }
                 )
-            except subprocess.TimeoutExpired as exc:
+            except OSError as exc:
                 records.append(
                     {
                         "command": command,
@@ -146,7 +144,7 @@ class RunTestsAction(Action):
     ):
         root = Path(repo_root)
         qa_root = root / ".codeteam_qa"
-        setup_records = self._run_setup_commands(root, setup_commands)
+        setup_records = await self._run_setup_commands(root, setup_commands, runtime_adapter)
         original_command = run_command or "pytest -q"
         effective_command = original_command
 
@@ -159,11 +157,13 @@ class RunTestsAction(Action):
                 )
                 return {
                     "success": False,
+                    "status": "setup_error",
                     "output": output,
                     "failures": [
                         {
                             "file_path": "",
                             "message": "setup command failed",
+                            "category": "setup_error",
                             "stack": output,
                         }
                     ],
@@ -178,9 +178,11 @@ class RunTestsAction(Action):
                 temp_tests_dir = self._write_temp_tests(root, tests)
                 effective_command = self._point_pytest_at_temp_tests(original_command, temp_tests_dir.relative_to(root))
 
-            result = runtime_adapter.run_tests(str(root), effective_command)
-            if hasattr(result, "__await__"):
-                result = await result
+            method = getattr(runtime_adapter, "run_tests_async", runtime_adapter.run_tests)
+            if inspect.iscoroutinefunction(method):
+                result = await method(str(root), effective_command)
+            else:
+                result = await asyncio.to_thread(method, str(root), effective_command)
 
             result.setdefault("setup_commands", setup_records)
             result["qa_run_command"] = {
