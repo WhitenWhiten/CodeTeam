@@ -1,5 +1,6 @@
 """Auditable CTO scoring contract."""
 from core.dependencies import resolve_file_dependencies
+from core.schemas import _flatten_repo_files
 CRITERIA = ("structural_validity", "interface_consistency", "implementability", "developer_plan")
 CTO_DECISION_SCHEMA = {"type": "object", "required": ["evaluations"], "properties": {
     "evaluations": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["candidate_id", "scores", "rationale", "assumptions"], "properties": {
@@ -20,7 +21,7 @@ def rank_candidates(result, candidates):
     ranked = []
     for c in candidates:
         row = dict(lookup[c["candidate_id"]])
-        dependencies = resolve_file_dependencies(c["sds"]["file_specs"], strict=True)
+        dependencies = resolve_file_dependencies(c["sds"]["file_specs"], repo_files=_flatten_repo_files(c["sds"]["repo_structure"]), strict=True)
         fanout = {p: 0 for p in dependencies}
         for deps in dependencies.values():
             for path in deps: fanout[path] += 1

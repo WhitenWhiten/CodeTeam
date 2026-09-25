@@ -9,7 +9,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 - [x] M04: Candidate rejection
 - [x] M05: CTO ranking
 - [x] M06: Progressive QA
-- [ ] M07: Evidence-based routing
+- [x] M07: Evidence-based routing
 - [ ] M08: Minimal invalidation
 - [ ] M09: Durable interface communication
 - [ ] M10: Bounded context and briefing
@@ -36,3 +36,5 @@ M04: Candidate-local rejection now continues remaining Architects and persists e
 M05: CTO now scores every stable candidate ID; code ranks by total, assumptions and graph fan-out with deterministic ties. Invalid decisions retry explicitly; ranked fallback is recorded. Batch B pending.
 
 M06: QA receives original requirements and accepted source/interface snapshots, generates per changed batch, retains regression files and fixtures, records test versions, and bounds syntax/import repairs without silently weakening assertions. Batch B pending.
+
+M07: Unified canonical dependency resolution, source-backed syntax/API diagnostics, unknown ambiguous providers and lossless multi-failure routing. Batch B pending.

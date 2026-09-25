@@ -165,4 +165,4 @@ class QAAgentAsync:
         return result
 
     def _map_failures(self, failures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return build_fix_suggestions(failures, self.file_owner, sds=self.sds)
+        return build_fix_suggestions(failures, self.file_owner, sds=self.sds, source_reader=self.repo.read_file)

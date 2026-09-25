@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import re
+import ast
+from core.dependencies import resolve_file_dependencies
+from core.interface_contracts import validate_implementation
+from core.contracts import to_jsonable
 from collections.abc import Mapping
 from typing import Any, Dict, Iterable, List, Sequence, Set
 
@@ -63,12 +67,13 @@ def _build_sds_context(sds: Any) -> Dict[str, Any]:
     dependents: Dict[str, Set[str]] = {}
     public_apis: Dict[str, Set[str]] = {}
 
+    resolved = resolve_file_dependencies(list(_iter_file_specs(sds)), strict=False)
     for spec in _iter_file_specs(sds):
         path = _normalize_path(_get(spec, "path", ""))
         if not path:
             continue
         specs[path] = spec
-        deps = {_normalize_path(dep) for dep in _as_list(_get(spec, "dependencies", [])) if _normalize_path(dep)}
+        deps = resolved.get(path, set())
         dependencies[path] = deps
         public_apis[path] = _public_api_names(_get(spec, "interfaces", {}))
         for dep in deps:
@@ -208,7 +213,7 @@ def _choose_source_path(
             "provider_files": [],
         },
         "structural_validity": {
-            "status": "valid" if path_info.get("source_paths") or path_info.get("test_paths") else "unknown",
+            "status": "not_evaluated",
             "source_paths_in_trace": path_info.get("source_paths", []),
             "test_paths_in_trace": path_info.get("test_paths", []),
         },
@@ -234,6 +239,9 @@ def _choose_source_path(
             "dependent_files": dependent_paths,
             "provider_files": provider_files,
         }
+        if len(provider_files) > 1:
+            diagnostics["interface_consistency"]["status"] = "ambiguous_provider"
+            return {"category": "unknown", "targets": [], "diagnostics": diagnostics, "public_api_changed": False}
         if provider_files:
             return {
                 "category": "interface_consistency",
@@ -293,6 +301,7 @@ def build_fix_suggestions(
     failures: List[Dict[str, Any]],
     file_owner: Dict[str, str],
     sds: Any = None,
+    source_reader=None,
 ) -> List[Dict[str, Any]]:
     suggestions: List[Dict[str, Any]] = []
     seen: Set[tuple[str, str, str]] = set()
@@ -307,6 +316,29 @@ def build_fix_suggestions(
         path_info = _paths_from_failure(failure, src_files)
         route = _choose_source_path(failure, src_files, sds_ctx, path_info)
         targets = [target for target in route["targets"] if target in file_owner]
+        checks = {}
+        if source_reader is not None:
+            for path in set(targets + path_info["source_paths"]):
+                try:
+                    code = source_reader(path)
+                    ast.parse(code)
+                    checks[path] = {"syntax": "passed"}
+                    spec = sds_ctx["specs"].get(path)
+                    if spec:
+                        try:
+                            validate_implementation(code, to_jsonable(_get(spec, "interfaces", {})))
+                            checks[path]["api"] = "passed"
+                        except (ValueError, SyntaxError) as exc:
+                            checks[path].update(api="failed", error=str(exc))
+                except SyntaxError as exc:
+                    checks[path] = {"syntax": "failed", "error": str(exc)}
+                except (OSError, ValueError) as exc:
+                    checks[path] = {"syntax": "not_evaluated", "error": str(exc)}
+        if checks:
+            states = [row["syntax"] for row in checks.values()]
+            route["diagnostics"]["structural_validity"].update(
+                status="failed" if "failed" in states else ("passed" if all(s == "passed" for s in states) else "not_evaluated"), checks=checks)
+        route["diagnostics"]["canonical_dependencies"] = {p: sorted(ds) for p, ds in sds_ctx["dependencies"].items()}
         affected = _affected_dependents(targets, sds_ctx["dependents"])
         issue_text = _primary_issue_text(failure)
 

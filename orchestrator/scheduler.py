@@ -26,6 +26,19 @@ def _normalize_path(path: str) -> str:
     return (path or "").replace("\\", "/").strip()
 
 
+def merge_repair_payload(payloads, file_path, issues, metadata=None):
+    """Preserve every independent failure and its routing evidence."""
+    if file_path not in payloads:
+        payloads[file_path] = {"type": "fix", "file_path": file_path,
+            "issues": {**dict(issues), "failures": [], "routing_evidence": []}}
+    merged = payloads[file_path]["issues"]
+    if issues not in merged["failures"]:
+        merged["failures"].append(dict(issues))
+    if metadata and metadata not in merged["routing_evidence"]:
+        merged["routing_evidence"].append(dict(metadata))
+    return payloads[file_path]
+
+
 class DependencyScheduler:
     """Dependency-aware file scheduler for SDS file_specs.
 
@@ -218,11 +231,8 @@ class DependencyScheduler:
                 raise SchedulerError(f"fix references unknown file: {file_path}")
 
             issues = fix.get("issues", {}) or {}
-            payloads[file_path] = {
-                "type": "fix",
-                "file_path": file_path,
-                "issues": issues,
-            }
+            merge_repair_payload(payloads, file_path, issues,
+                {k: v for k, v in fix.items() if k not in {"issues", "dev_id"}})
             to_requeue.append(file_path)
 
             public_api_changed = bool(
