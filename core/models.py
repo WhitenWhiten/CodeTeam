@@ -44,6 +44,8 @@ class SDS:
     notes: str = ""
     schema_version: str = "1.0"
     normalization_log: List[str] = field(default_factory=list)
+    file_rules: List[dict] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
 
 @dataclass
 class UpdateReason:

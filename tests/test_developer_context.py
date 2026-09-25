@@ -15,7 +15,7 @@ SPEC = {"path": "a.py", "responsibilities": "answer", "interfaces": {"functions"
 
 def test_repair_receives_source_and_full_change_information(tmp_path):
     repo = RepoManager(str(tmp_path), {"a.py"}, {"Dev": {"a.py"}}, git_enabled=False)
-    original = "def answer():\n    return 0\n\ndef helper():\n    return 9\n"
+    original = "def answer() -> int:\n    return 0\n\ndef helper():\n    return 9\n"
     repo.write_file("a.py", original, "Dev")
     class LLM:
         async def text(self, prompt):

@@ -119,7 +119,8 @@ class SDSContractTests(unittest.TestCase):
             "id": "paper-schema",
             "problem": "build an API wrapper",
             "tech_stack": {"language": "Python", "frameworks": ["Flask"], "runtime": "python3.10", "test_framework": "pytest"},
-            "repo_tree": ["src/core.py", "src/api.py", "tests/test_api.py"],
+            "repo_tree": ["src/core.py", "src/api.py", "tests/test_api.py", "requirements.txt"],
+            "file_rules": [{"path": "requirements.txt", "kind": "manifest", "producer": "static", "content": "flask>=2.0\npytest\n"}],
             "dependencies": ["flask>=2.0", "pytest"],
             "developer_plan": {
                 "num_developers": 2,

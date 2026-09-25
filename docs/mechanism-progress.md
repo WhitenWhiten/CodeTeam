@@ -5,7 +5,7 @@ Each mechanism is committed separately. Acceptance runs are batched; a checked i
 
 - [x] M01: SDS semantics
 - [x] M02: Implementation contracts
-- [ ] M03: Delivery completeness
+- [x] M03: Delivery completeness
 - [ ] M04: Candidate rejection
 - [ ] M05: CTO ranking
 - [ ] M06: Progressive QA
@@ -27,3 +27,6 @@ Pending.
 M01: Added versioned semantic validation, alias conflict rejection, unambiguous dependency resolution and syntactic declaration checks. Batch A acceptance pending.
 
 M02: Implemented AST signature/default/annotation checks before writes, static internal import checks, and explicit unresolved dynamic import reports. Batch A pending.
+
+M03: Added explicit static/QA producers, dependency-manifest requirement, required-file delivery gate and removal of temporary test placeholders. Batch A running.
+Batch A: 29 passed. Strict-contract fixtures now declare required annotations/manifests; delivered temporary QA paths have explicit absent checkpoint entries.

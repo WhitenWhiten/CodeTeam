@@ -16,6 +16,7 @@ SDS_SCHEMA: Dict[str, Any] = {
   "properties": {
     "schema_version": {"type": "string", "enum": ["1.0"]},
     "normalization_log": {"type": "array", "items": {"type": "string"}},
+    "file_rules": {"type": "array", "items": {"type": "object", "required": ["path", "kind", "producer"], "properties": {"path": {"type": "string"}, "kind": {"enum": ["source", "configuration", "manifest", "documentation", "package_marker", "qa_temporary"]}, "producer": {"enum": ["static", "qa"]}, "content": {"type": "string"}, "allow_empty": {"type": "boolean"}}, "additionalProperties": False}},
     "id": {"type": "string"},
     "problem": {"type": "string", "minLength": 1},
     "tech_stack": {
@@ -403,6 +404,9 @@ def validate_sds_semantics(sds_json: Dict[str, Any]) -> None:
                 raise ValueError(f"dependency does not point to a declared file or symbol: {path} -> {dependency}")
             graph[path].update(target for target in targets if target in spec_set and target != path)
     _raise_if_dependency_graph_has_cycle(graph)
+
+    from core.delivery import delivery_rules
+    delivery_rules(sds_json, repo_files)
 
     # Supported tech_stack language check; this PoC supports only python.
     if sds_json["tech_stack"]["language"].lower() not in {"python"}:

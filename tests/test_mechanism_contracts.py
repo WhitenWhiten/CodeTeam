@@ -41,3 +41,19 @@ def test_implementation_enforces_signature_and_preserves_helpers():
         validate_import_contract(ast.parse("from provider import f"), "consumer.py", ["provider.py", "consumer.py"], [])
     report = validate_import_contract(ast.parse("import importlib\nimportlib.import_module(name)"), "consumer.py", ["consumer.py"], [])
     assert report["dynamic_unknown"]
+
+
+def test_delivery_rejects_unowned_source_and_accepts_explicit_static_rule(tmp_path):
+    from core.delivery import check_delivery, initialize_static_files
+    from core.repo_manager import RepoManager
+    from utils.allowed_files import flatten_repo_structure
+    s=sample(); s["repo_structure"].append({"path":"orphan.py","type":"file"})
+    with pytest.raises(ValueError, match="producer"): validate_sds(s)
+    s["file_rules"]=[{"path":"orphan.py","kind":"source","producer":"static","content":"VALUE = 1"}]
+    validate_sds(s)
+    repo=RepoManager(str(tmp_path),set(flatten_repo_structure(s["repo_structure"])),{},git_enabled=False)
+    repo.init_structure(s["repo_structure"]); initialize_static_files(repo,s)
+    report=check_delivery(repo,s)
+    assert not report["success"]
+    assert any(f["path"]=="main.py" for f in report["failures"])
+    assert not any(f["path"].endswith("__init__.py") for f in report["failures"])

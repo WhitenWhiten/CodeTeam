@@ -177,7 +177,7 @@ class MultiAgentCodegenWorkflowAsync:
             return
         hashes = {}
         if self._repo:
-            hashes = {path: hashlib.sha256(self._repo.read_bytes(path)).hexdigest() for path in sorted(self._repo.allowed_files_all)}
+            hashes = {path: hashlib.sha256(self._repo.read_bytes(path)).hexdigest() if self._repo.is_file(path) else None for path in sorted(self._repo.allowed_files_all)}
         qa = self._qa
         bundle = {"tests": qa.tests, "run_command": qa.run_command, "setup_commands": qa.setup_commands} if qa and qa.tests else None
         artifacts.write_json("checkpoint.json", {"version": 1, "artifacts_dir": str(artifacts.root),
@@ -209,8 +209,12 @@ class MultiAgentCodegenWorkflowAsync:
                 raise ValueError("Checkpoint source manifest is incomplete")
             if not root.is_relative_to(Path(self.ctx.cfg.workspace).resolve()):
                 raise ValueError("Checkpoint repository is outside the configured workspace")
+            from core.delivery import delivery_rules
+            temporary = {p for p, r in delivery_rules(saved["chosen_sds"], declared_files).items() if r["kind"] == "qa_temporary"}
             for relative, expected in saved["file_hashes"].items():
                 path = (root / relative).resolve()
+                if expected is None and relative in temporary and not path.exists():
+                    continue
                 if not path.is_relative_to(root) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
                     raise ValueError(f"Checkpoint source changed or disappeared: {relative}")
         usage = getattr(self.ctx.llm, "usage", None)
@@ -332,6 +336,10 @@ class MultiAgentCodegenWorkflowAsync:
         )
         if not resuming_repo:
             repo.init_structure(sds.repo_structure)
+            from core.delivery import initialize_static_files
+            initialize_static_files(repo, chosen_sds)
+            if repo.git_enabled:
+                repo.commit_all("chore: materialize declared static artifacts")
         elif repo.git_enabled:
             repo.ensure_integration_branch()
             if repo._git("status", "--porcelain").stdout.strip():
@@ -395,6 +403,13 @@ class MultiAgentCodegenWorkflowAsync:
                 self._save_checkpoint()
                 await self._run_scheduled_dev_tasks(bus, scheduler, payloads=fix_payloads)
                 self._check_resource_limits()
+
+        from core.delivery import check_delivery, remove_temporary_placeholders
+        delivery = check_delivery(repo, chosen_sds)
+        self._artifact_json("repository/delivery.json", delivery)
+        if not delivery["success"]:
+            raise ValidationStopped(f"Incomplete delivery: {delivery['failures']}")
+        remove_temporary_placeholders(repo, delivery)
 
         # Stop worker coroutines.
         for a in sds.dev_plan:
