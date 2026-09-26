@@ -58,6 +58,16 @@ df_eff      = pd.read_excel(xls, "Efficiency_diagnostics")
 df_qa       = pd.read_excel(xls, "QA_convergence")
 print("Done.\n")
 
+# Integrity check on the all_tests_pass column: full-task successes should not
+# be concentrated in a single seed across all methods. If they are, the column
+# is a partial or best-of-seeds export and Pass@1 must be recomputed from the
+# raw run logs before being reported.
+_per_seed_totals = df_nl2repo.groupby("seed")["all_tests_pass"].sum()
+if (_per_seed_totals > 0).sum() <= 1 and _per_seed_totals.sum() > 0:
+    print("WARNING: all_tests_pass is nonzero for only one seed "
+          f"({_per_seed_totals.to_dict()}); the Pass@1 values computed below "
+          "are NOT trustworthy estimates of single-attempt success.\n")
+
 DIFF_ORDER = ["easy", "medium", "hard"]
 
 
@@ -251,11 +261,19 @@ for setting, methods in [("PE", NL2_METHODS_PE), ("SFT", NL2_METHODS_SFT)]:
             seed_sub = sub[sub["seed"] == seed_val]
             seed_all_vals.append(seed_sub.groupby("task_id")["pass_rate"].mean().mean())
         row_data["overall"] = {"mean": fmt(task_means.mean()), "std": fmt(np.std(seed_all_vals, ddof=0))}
-        # Pass@1 = fraction of tasks where at least 1 seed has all_tests_pass=1
+        # Pass@1 (definition stated in Section 4 of the paper): the average
+        # single-generation full-task success rate over the three seeds, i.e.
+        # the mean over seeds of (fraction of tasks with all_tests_pass == 1).
+        # NOTE: an earlier release of this script computed the per-task MAXIMUM
+        # over seeds (the fraction of tasks solved by at least one of the three
+        # seeds). That is a best-of-3 (Pass@3-style) statistic, which
+        # overestimates single-attempt success and does not implement the
+        # stated definition.
         n_tasks = sub["task_id"].nunique()
-        pass1_count = sub.groupby("task_id")["all_tests_pass"].max().sum()
-        pass1_pct = pass1_count / n_tasks * 100
+        per_seed_pass1 = sub.groupby("seed")["all_tests_pass"].sum() / n_tasks * 100
+        pass1_pct = per_seed_pass1.mean()
         row_data["pass1"] = fmt(pass1_pct)
+        row_data["pass1_per_seed"] = {int(s): fmt(v) for s, v in per_seed_pass1.items()}
 
         label = f"{method} ({setting})"
         print(f"{label:<18} "
@@ -310,9 +328,10 @@ for ms in [("CodeTeam", "PE"), ("CodeTeam", "SFT"), ("CodeS", "SFT")]:
     sub = df_nl2repo[(df_nl2repo["method"] == method) & (df_nl2repo["setting"] == setting)]
     task_means = sub.groupby("task_id")["pass_rate"].mean()
     avg_rate = task_means.mean()
+    # Pass@1 per the stated definition: mean over seeds of the per-seed
+    # full-task success fraction (see the note in the Table 5 section above).
     n_tasks = sub["task_id"].nunique()
-    pass1_count = sub.groupby("task_id")["all_tests_pass"].max().sum()
-    pass1_pct = pass1_count / n_tasks * 100
+    pass1_pct = (sub.groupby("seed")["all_tests_pass"].sum() / n_tasks * 100).mean()
     ratio = pass1_pct / avg_rate if avg_rate > 0 else 0
     label = f"{method}({setting})"
     print(f"  {label}: avg_rate={avg_rate:.1f}%, Pass@1={pass1_pct:.1f}%, ratio={ratio:.2f}")
