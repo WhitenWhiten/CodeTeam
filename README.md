@@ -153,7 +153,7 @@ CodeTeam/
 |-- app/                  # Application entrypoints and runtime bootstrap
 |-- core/                 # Infrastructure for models, schemas, and repository management
 |-- data/                 # Experiment data and analysis scripts for paper replication
-|-- img/         		  # Images resources for this package
+|-- img/                  # Images resources for this package
 |-- orchestrator/         # Workflow orchestration across all agents
 |-- prompts/              # External prompt templates used by different roles
 |-- rag/                  # Retrieval-augmented generation logic and local corpus assets
@@ -164,7 +164,7 @@ CodeTeam/
 |-- utils/                # utilities for events, logging, routing, and SDS parsing
 |-- requirements.txt      # List of python run-time requirements
 |-- requirements-rag.txt  # List of RAG run-time requirements 
-\-- README.md			  # Description of this replication package
+\-- README.md             # Description of this replication package
 ```
 
 ## 📝 Citation
