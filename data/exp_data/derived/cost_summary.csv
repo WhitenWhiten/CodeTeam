@@ -1,0 +1,8 @@
+method,median_calls,median_input_k,median_output_k,median_node_h,total_node_h,attempts
+Vanilla,1,16.0,8.0,0.8,416,520
+ChatDev,16,65.0,48.0,7.2,3744,520
+AutoGPT,24,87.0,67.0,10.5,5460,520
+CodeS,14,71.0,51.0,7.0,3640,520
+CodeTeam,44,332.0,201.0,30.0,15600,520
+MetaGPT,18,80.0,55.0,8.5,4420,520
+DeepSeek-Adapter,40,300.0,185.0,27.5,14300,520

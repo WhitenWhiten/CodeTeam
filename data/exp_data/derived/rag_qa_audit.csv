@@ -1,0 +1,14 @@
+item,value
+repositories,"1,240"
+chunks,"186,000"
+collection_date,2025-11-30
+similarity_threshold,0.72
+top_k,5
+leakage_probes,200
+leakage_positives,0
+qa_accept_rate,54.2
+qa_accepted_upstream,55.2
+qa_rejected_upstream,40.0
+qa_point_biserial_r,0.34
+qa_accepted_n,282
+qa_rejected_n,238

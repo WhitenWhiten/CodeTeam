@@ -1,0 +1,6 @@
+contrast,metric,delta,ci_lo,ci_hi
+CodeTeam - CodeS,structural,3.84,2.05,5.61
+CodeTeam - CodeS,count_pass_pp,4.99,2.22,7.72
+CodeTeam - CodeS,harness_clean_pp,3.46,-1.54,8.65
+CodeTeam - DeepSeek-Adapter,structural,1.27,-0.14,2.69
+CodeTeam - DeepSeek-Adapter,count_pass_pp,1.67,-1.04,4.37

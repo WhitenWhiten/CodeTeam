@@ -1,0 +1,8 @@
+method,count_pass_mean,count_pass_sd,harness_clean,attempts
+Vanilla,33.34,13.92,23,520
+ChatDev,39.49,13.54,38,520
+AutoGPT,38.92,13.86,36,520
+CodeS,43.25,13.77,67,520
+CodeTeam,48.24,18.18,85,520
+MetaGPT,40.74,13.19,44,520
+DeepSeek-Adapter,46.57,13.33,76,520

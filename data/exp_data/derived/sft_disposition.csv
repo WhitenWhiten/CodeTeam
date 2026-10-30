@@ -1,0 +1,5 @@
+item,value
+status,withdrawn_from_main_evaluation
+reason,stage-specific supervision cannot be matched symmetrically across the seven workflows
+prior_campaign,"Qwen2.5-72B, 18,240/960 instances, 4,266 GPU-hours; not comparable"
+current_campaign,"prompt engineering only, Qwen3.8-27B, five repetitions"

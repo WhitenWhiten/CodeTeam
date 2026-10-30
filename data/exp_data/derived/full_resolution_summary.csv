@@ -1,0 +1,8 @@
+method,attempts,fully_solved,reaches_90,max_count_pass_pct
+Vanilla,520,0,0,76.47
+ChatDev,520,0,0,82.61
+AutoGPT,520,0,0,82.61
+CodeS,520,0,0,80.0
+CodeTeam,520,0,16,96.88
+MetaGPT,520,0,0,76.47
+DeepSeek-Adapter,520,0,0,80.95

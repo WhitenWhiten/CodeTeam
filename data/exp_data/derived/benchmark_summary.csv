@@ -1,0 +1,3 @@
+benchmark,tasks,easy,medium,hard,primary_metric,execution
+SketchEval,19,5,8,6,exported structural score,none (structure only)
+NL2Repo-Bench,104,26,46,32,mean counted-test pass percentage,upstream pytest suite

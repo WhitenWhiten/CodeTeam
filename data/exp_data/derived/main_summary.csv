@@ -1,0 +1,8 @@
+method,structural_mean,structural_sd,n_tasks,runs,attempts
+Vanilla,42.88,7.31,19,5,95
+ChatDev,47.62,7.12,19,5,95
+AutoGPT,46.83,7.35,19,5,95
+CodeS,50.04,5.7,19,5,95
+CodeTeam,53.88,6.16,19,5,95
+MetaGPT,48.51,7.12,19,5,95
+DeepSeek-Adapter,52.61,5.8,19,5,95

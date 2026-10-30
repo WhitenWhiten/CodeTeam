@@ -1,0 +1,4 @@
+method,condition,structural,counted_test,median_node_h,total_node_h,attempts
+CodeS,matched,52.4,46.06,29.8,15496,520
+SingleAgent,matched,51.9,45.8,29.8,15496,520
+CodeTeam,full,53.89,48.25,30.0,15600,520

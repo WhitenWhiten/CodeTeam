@@ -1,0 +1,8 @@
+method,family,scaffold,retrieval
+Vanilla,direct generation,single pass,none
+ChatDev,role dialogue,design-coding-testing,none
+AutoGPT,general agent,controller/tool loop,none
+CodeS,sketch pipeline,RepoSketcher/FileSketcher/SketchFiller,none
+MetaGPT,SOP roles,structured handoffs,none
+DeepSeek-Adapter,coordinator/worker,task dispatch harness,none
+CodeTeam,contract workflow,SDS/CTO/scheduler/QA,none in main
