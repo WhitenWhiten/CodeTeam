@@ -177,7 +177,3 @@ CodeTeam/
   year = {2026}
 }
 ```
-
-## Mechanism implementation protocol
-
-The M01–M16 mechanism improvements are documented in [the runtime protocol](docs/mechanism-runtime.md), with separate commits and batched acceptance in [the progress record](docs/mechanism-progress.md). Explicit switches cover selection, allocation, ownership, scheduling, requeue, live briefs, context, Git branches and QA. Existing paper/result descriptions remain historical; these implementation changes are not new benchmark results.
