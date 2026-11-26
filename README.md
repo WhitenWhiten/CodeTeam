@@ -14,6 +14,8 @@
 
 # CodeTeam
 
+**Paper versions.** The [revised paper (v2)](https://arxiv.org/abs/2606.22082v2) uses five repetitions per task in its main prompt-engineering evaluation. See [Replication Data](#-replication-data) for the v2 CSVs and the separate [v1](https://arxiv.org/abs/2606.22082v1) Excel workflow.
+
 **CodeTeam** is an LLM-powered multi-agent framework for repository-level code generation.
 Given a project requirements document, CodeTeam aims to generate an entire repository from an empty workspace through coordinated planning, decision making, implementation, and repair.
 The framework is designed for the natural language to repository generation (NL2Repo) setting, where systems must reason about file structures, interfaces, dependencies, and cross-file implementation details at the repository level.
@@ -81,7 +83,7 @@ CodeTeam generates a repository from an empty workspace in three stages: plannin
 
 Each candidate is first normalized and mechanically validated. A CTO Agent scores every valid candidate, and a deterministic aggregation and tie-break rule selects the executable contract. Based on the selected SDS, CodeTeam initializes the full file tree and instantiates the exact number of Developer Agents required by the plan. These developers implement their assigned files under a dependency-aware scheduler with bounded context, while commit-linked, replayable interface events propagate accepted changes. Git branches share one worktree; writes and integration are serialized. Initially and after changed implementation batches, a QA Agent generates and retains versioned temporary regression tests, executes the configured setup commands and pytest run strategy inside the workspace, summarizes failures, and triggers iterative repair until the repository converges or the global budget is exhausted. The temporary QA tests are removed before the final repository is returned.
 
-In the experiments reported in the paper, all agents share the same backbone model family, Qwen2.5-72B-Instruct. This repository provides the prompting-based workflow implementation and the paper's PE/SFT result data for statistical reproduction.
+In arXiv v2, the main comparison uses Qwen3.8-27B across all workflows and evaluates prompt engineering (PE) only. The Qwen2.5-72B-Instruct PE/SFT campaign belongs to v1; the SFT pilot is outside the v2 main comparison.
 
 ## 📊 Benchmarks
 
@@ -89,29 +91,37 @@ In the experiments reported in the paper, all agents share the same backbone mod
 
 SketchEval is the main benchmark used in this study. It contains 19 real-world Python repositories with requirements documents and reference implementations, and the tasks are grouped into easy, medium, and hard categories according to repository scale and dependency complexity. For each task, the model receives only the processed requirements document and must generate the repository from scratch in an empty workspace.
 
-The main evaluation metric on SketchEval is SketchBLEU, a repository-level metric that measures n-gram overlap, weighted n-gram overlap, structural similarity, and dataflow similarity between the generated repository and the reference repository. In the paper, SketchEval is used as the primary benchmark for the main comparison with CodeS (PE/SFT), a vanilla single-model baseline, and adapted agent baselines.
+The main evaluation metric on SketchEval is SketchBLEU, a repository-level metric that measures n-gram overlap, weighted n-gram overlap, structural similarity, and dataflow similarity between the generated repository and the reference repository. In v2, SketchEval is the primary structural benchmark for the prompt-engineering comparison with CodeS, a vanilla single-model baseline, and adapted agent baselines.
 
 ### NL2Repo-Bench
 
 NL2Repo-Bench is used as a complementary execution-based benchmark. It contains 104 tasks from real Python libraries and evaluates generated repositories by running the original upstream `pytest` suites. Compared with SketchEval, this benchmark places stricter emphasis on end-to-end executability, including package layout, dependency declarations, import consistency, and functional behavior under tests.
 
-In this project, NL2Repo-Bench is used as an external validation benchmark for RQ1. The evaluation follows the document-only setting of the benchmark: agents do not see the target repository, scaffold, or test cases during generation. The intended metrics are average upstream test pass rate and Pass@1, together with the easy/medium/hard breakdown defined by the benchmark.
+In this project, NL2Repo-Bench is used as an external validation benchmark for RQ1. The evaluation follows the document-only setting of the benchmark: agents do not see the target repository, scaffold, or test cases during generation. The v2 results distinguish the counted-test pass rate, attempts with no failures among collected tests, and full-task resolution (Pass@1), which requires every upstream counted test to pass without collection or execution errors.
 
 ## 🧪 Ablation Study
 
 The ablation study is designed to isolate the contribution of the main workflow components of CodeTeam under the prompting-based setting. All ablations keep the same backbone model, decoding configuration, budgets, and overall workflow wherever possible.
 
-The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. Three ablation variants are considered in the paper. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed-size round-robin assignment (at most one nonempty owner per source file). The paper also describes an ablation without Git-based coordination. In the current runtime, disabling Git removes branches and commits while retaining persistent interface briefs and structured update reasons; this flag alone does not reproduce removal of all coordination information.
+The full CodeTeam setting includes architect competition, RAG grounding, dynamic developer allocation, Git-based coordination, and the QA feedback loop. The revised paper evaluates thirteen interventions against a retrieval-enabled reference, separate from the retrieval-free main comparison. The following are examples. The first removes RAG, so the Architect Agents design the SDS only from the requirements document. The second removes dynamic developer allocation and replaces the architect-planned developer count and file ownership with a fixed-size round-robin assignment (at most one nonempty owner per source file). The paper also describes an ablation without Git-based coordination. In the current runtime, disabling Git removes branches and commits while retaining persistent interface briefs and structured update reasons; this flag alone does not reproduce removal of all coordination information.
 
 These ablations are mainly evaluated on SketchEval. In addition to end-to-end SketchBLEU, the study also examines planning-stage and coordination-stage diagnostics, such as SDS parse success, structural validity, plan diversity, QA rounds, interface-mismatch failures, and average context size.
 
 ## 📦 Replication Data
 
-The `data/` directory contains the raw experiment data and an analysis script used to reproduce all tables and inline statistics reported in the paper.
+### Revised paper (arXiv v2)
 
-### Data file
+The main comparison uses prompt engineering only, with five repetitions per task. The repository provides [run-level CSVs](data/exp_data/runs/) and [derived summaries](data/exp_data/derived/). Start with these files for the main results:
 
-**`experiment_results.xlsx`** is a multi-sheet Excel workbook. Each sheet stores task-level measurements across three random seeds.
+| v2 table | Published summary |
+|---|---|
+| Table 7: SketchEval structural scores | [`main_summary.csv`](data/exp_data/derived/main_summary.csv) |
+| Table 11: NL2Repo-Bench counted-test pass rates | [`exec_summary.csv`](data/exp_data/derived/exec_summary.csv) |
+| Table 12: NL2Repo-Bench full-task resolution and near-complete attempts | [`full_resolution_summary.csv`](data/exp_data/derived/full_resolution_summary.csv) |
+
+### Original paper (arXiv v1)
+
+The [`experiment_results.xlsx`](data/experiment_results.xlsx) workbook and [`analyze_experiment_results.py`](data/analyze_experiment_results.py) script below are for the [v1 paper](https://arxiv.org/abs/2606.22082v1). The workbook contains task-level measurements across three random seeds. Table references in this section refer to v1.
 
 | Sheet | Paper reference | Description |
 |---|---|---|
@@ -124,9 +134,9 @@ The `data/` directory contains the raw experiment data and an analysis script us
 | `Efficiency_diagnostics` | Table 8 | Coordination-stage diagnostics: `qa_rounds`, `mismatch_failures`, `avg_context_k_tokens`. |
 | `QA_convergence` | Section 5.3 | QA iteration convergence curves: `task_id`, `seed`, `iteration`, `SketchBLEU`. |
 
-### Analysis script
+#### v1 analysis script
 
-**`analyze_experiment_results.py`** reads the Excel workbook and reproduces every table and inline statistic in the paper.
+**`analyze_experiment_results.py`** reads the v1 Excel workbook; it does not read the v2 CSVs.
 
 **Dependencies:**
 
